@@ -14,8 +14,8 @@ import dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __filename = process.cwd() + '/server.ts';
+const __dirname = process.cwd();
 
 async function startServer() {
   const app = express();

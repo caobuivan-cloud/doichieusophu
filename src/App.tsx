@@ -316,31 +316,33 @@ export default function App() {
 
   // Parse Bank Statement sheet (looking for Có/Credit column index)
   const parseBankStatement = (rows: any[][]) => {
-    // We search for standard bank headers
+    // We search for standard bank headers to find the START row
     let headerRowIndex = -1;
-    let colIndices = { date: -1, ref: -1, desc: -1, credit: -1 };
+    
+    // Fixed columns from user: Cột F (Index 5) là Diễn giải
+    // We retain defaults for others (Date: 1, Ref: 2, Credit: 7) unless detected
+    let colIndices = { date: -1, ref: -1, desc: 5, credit: -1 };
 
-    // Traverse first 20 rows to locate header row
+    // Traverse first 25 rows to locate header row
     for (let r = 0; r < Math.min(rows.length, 25); r++) {
       const row = rows[r];
       if (!row) continue;
       const creditIdx = row.findIndex((cell) => {
         if (!cell) return false;
         const s = String(cell).toLowerCase().trim();
-        return s === "có" || s === "có/credit" || s === "credit" || s === "phát sinh có";
+        return s === "có" || s === "co" || s === "có/credit" || s === "co/credit" || s === "credit" || s === "phát sinh có" || s === "phat sinh co";
       });
 
       if (creditIdx !== -1) {
         headerRowIndex = r;
         colIndices.credit = creditIdx;
         
-        // Find other columns
+        // Find other columns, but keep desc fixed at 5 (Cột F)
         row.forEach((cell, idx) => {
           if (!cell) return;
           const s = String(cell).toLowerCase().trim();
-          if (s.includes("ngày") || s.includes("date")) colIndices.date = idx;
-          else if (s.includes("bút toán") || s.includes("reference") || s.includes("ref")) colIndices.ref = idx;
-          else if (s.includes("diễn giải") || s.includes("description") || s.includes("nội dung")) colIndices.desc = idx;
+          if (s.includes("ngày") || s.includes("ngay") || s.includes("date")) colIndices.date = idx;
+          else if (s.includes("bút toán") || s.includes("but toan") || s.includes("reference") || s.includes("ref")) colIndices.ref = idx;
         });
         break;
       }
@@ -386,21 +388,31 @@ export default function App() {
   // Parse Cloud Tracking table
   const parseCloudRecords = (rows: any[][]) => {
     let headerRowIndex = 0;
-    let colIndices = { description: 3, amount: 4, email: 7 };
+    
+    // Fixed columns from user: 
+    // Diễn giải Cloud = Cột D (Index 3)
+    // Email Cloud = Cột G (Index 6)
+    // Giữ nguyên số tiền mặc định là cột E (Index 4) nếu không quét thấy
+    let colIndices = { description: 3, amount: 4, email: 6 };
 
-    // Traverse top rows to locate "email" or "số tiền" labels
+    // Traverse top rows to locate header row just to know where data starts
     for (let r = 0; r < Math.min(rows.length, 10); r++) {
       const row = rows[r];
       if (!row) continue;
-      const emailIdx = row.findIndex((cell) => cell && String(cell).toLowerCase().includes("email"));
-      if (emailIdx !== -1) {
+      
+      const hasHeader = row.some((cell) => {
+        if (!cell) return false;
+        const s = String(cell).toLowerCase().trim();
+        return s.includes("email") || s.includes("diễn giải") || s.includes("dien giai");
+      });
+
+      if (hasHeader) {
         headerRowIndex = r;
-        colIndices.email = emailIdx;
+        // Optionally detect amount column if it moved, but keep fixed for desc and email
         row.forEach((cell, idx) => {
           if (!cell) return;
           const s = String(cell).toLowerCase().trim();
-          if (s.includes("diễn giải")) colIndices.description = idx;
-          else if (s.includes("tiền") || s.includes("amount")) colIndices.amount = idx;
+          if (s.includes("tiền") || s.includes("tien") || s.includes("amount")) colIndices.amount = idx;
         });
         break;
       }
@@ -428,6 +440,30 @@ export default function App() {
         });
       }
     }
+
+    // Xử lý dữ liệu: Fill các ô email bị trống dựa trên diễn giải giống nhau
+    const descToEmailMap = new Map<string, string>();
+    // Lần 1: Lưu lại email đầu tiên không trống của mỗi diễn giải
+    for (const rec of cleaned) {
+      if (rec.email && rec.description) {
+        const cleanDesc = cleanCompareText(rec.description);
+        if (!descToEmailMap.has(cleanDesc)) {
+          descToEmailMap.set(cleanDesc, rec.email);
+        }
+      }
+    }
+
+    // Lần 2: Cập nhật lại email cho các dòng bị trống
+    for (const rec of cleaned) {
+      if (!rec.email && rec.description) {
+        const cleanDesc = cleanCompareText(rec.description);
+        const mappedEmail = descToEmailMap.get(cleanDesc);
+        if (mappedEmail) {
+          rec.email = mappedEmail;
+        }
+      }
+    }
+
     setCloudRecords(cleaned);
   };
 
@@ -440,7 +476,7 @@ export default function App() {
       const row = rows[r];
       if (!row) continue;
       const codeIdx = row.findIndex(
-        (cell) => cell && (String(cell).toLowerCase().includes("mã kh") || String(cell).toLowerCase() === "mã")
+        (cell) => cell && (String(cell).toLowerCase().includes("mã kh") || String(cell).toLowerCase().includes("ma kh") || String(cell).toLowerCase() === "mã" || String(cell).toLowerCase() === "ma")
       );
       if (codeIdx !== -1) {
         headerRowIndex = r;
@@ -449,9 +485,9 @@ export default function App() {
           if (!cell) return;
           const s = String(cell).toLowerCase().trim();
           if (s.includes("email")) colIndices.email = idx;
-          else if (s.includes("tên") || s.includes("công ty")) colIndices.name = idx;
-          else if (s.includes("địa chỉ")) colIndices.address = idx;
-          else if (s.includes("mst") || s.includes("thuế")) colIndices.tax = idx;
+          else if (s.includes("tên") || s.includes("ten") || s.includes("công ty") || s.includes("cong ty")) colIndices.name = idx;
+          else if (s.includes("địa chỉ") || s.includes("dia chi")) colIndices.address = idx;
+          else if (s.includes("mst") || s.includes("thuế") || s.includes("thue")) colIndices.tax = idx;
         });
         break;
       }
@@ -591,17 +627,6 @@ export default function App() {
           return cleanClDesc === cleanBkDesc;
         });
 
-        // Substring / permissive match fallback if exact match wasn't found
-        if (!cloudMatch && cloudRecords.length > 0) {
-          cloudMatch = cloudRecords.find((rec) => {
-            if (!rec.description) return false;
-            const cleanClDesc = cleanCompareText(rec.description);
-            // Ignore trivial small descriptions to avoid false positives
-            if (cleanClDesc.length < 5) return false;
-            return cleanBkDesc.includes(cleanClDesc) || cleanClDesc.includes(cleanBkDesc);
-          });
-        }
-
         if (cloudMatch && cloudMatch.email) {
           resolvedEmail = cloudMatch.email.trim();
           cloudDescMatched = true;
@@ -736,7 +761,7 @@ export default function App() {
 
       return computedRow;
     });
-  }, [bankTransactions, cloudRecords, accountingCustomers, globalTkCo, globalTenTkCo, globalVuViec, globalBoPhan, manualRows]);
+  }, [bankTransactions, cloudRecords, accountingCustomers, globalTkCo, globalTenTkCo, globalVuViec, globalBoPhan, manualRows, isMatchedRun]);
 
   // Execute AI matching call to our server route for the selected or all unmatched entries
   const handleAiDeepMatching = async () => {
