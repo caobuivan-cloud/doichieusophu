@@ -1111,11 +1111,11 @@ export default function App() {
       <aside className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col shrink-0 relative z-50 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`}>
         <div className="h-20 border-b border-slate-100 flex items-center px-4 shrink-0">
           {/* Logo */}
-          <div className="w-12 h-12 bg-[#ea580c] rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-sm shrink-0">VC</div>
+          <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-black font-bold text-xl shadow-sm shrink-0">VC</div>
           {!isSidebarCollapsed && (
             <div className="ml-3 overflow-hidden flex-1">
-              <h1 className="text-[17px] font-bold text-slate-800 leading-tight whitespace-nowrap">Tool Kế toán</h1>
-              <p className="text-[13px] text-slate-500 whitespace-nowrap">Assistant for Account</p>
+              <h1 className="text-[17px] font-bold text-slate-800 leading-tight whitespace-nowrap">Accounting Tools</h1>
+              <p className="text-[13px] text-slate-500 whitespace-nowrap">Assistant for Accounting</p>
             </div>
           )}
         </div>
@@ -1702,7 +1702,7 @@ export default function App() {
                       className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded text-xs shadow-sm cursor-pointer transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      Generate XLSX Result
+                      Xuất toàn bộ danh sách
                     </button>
                   </div>
                 </div>
