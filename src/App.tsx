@@ -70,6 +70,51 @@ interface ProcessedRow {
   bangKe: string;
   td2: string;
 }
+const CustomerCodeEditor = ({
+  row,
+  accountingCustomers,
+  handleCellEdit
+}: {
+  row: ProcessedRow;
+  accountingCustomers: AccountingCustomer[];
+  handleCellEdit: (id: string, field: keyof ProcessedRow, val: any) => void;
+}) => {
+  const [val, setVal] = useState(row.maKhach);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const code = e.target.value;
+    setVal(code);
+
+    const corresponding = accountingCustomers.find((c) => c.customerCode === code);
+    if (corresponding) {
+      handleCellEdit(row.id, "maKhach", code);
+      handleCellEdit(row.id, "tenKhach", corresponding.companyName);
+      if (corresponding.email) {
+        handleCellEdit(row.id, "resolvedEmail", corresponding.email);
+      }
+    }
+  };
+
+  const handleBlur = () => {
+    if (val !== row.maKhach) {
+      const corresponding = accountingCustomers.find((c) => c.customerCode === val);
+      if (!corresponding) {
+        handleCellEdit(row.id, "maKhach", val);
+      }
+    }
+  };
+
+  return (
+    <input
+      list="accounting-customers-list"
+      value={val}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      placeholder="Gõ mã hoặc tên KH..."
+      className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 bg-white"
+    />
+  );
+};
 
 export default function App() {
   // Main states for holding active accounting tables
@@ -1819,28 +1864,11 @@ export default function App() {
                             {/* Cột C: Mã Khách (Matching 2 Outcome) */}
                             <td className="py-2.5 px-3 whitespace-normal break-all">
                               {isEditing ? (
-                                <select
-                                  value={row.maKhach}
-                                  onChange={(e) => {
-                                    const code = e.target.value;
-                                    const corresponding = accountingCustomers.find(c => c.customerCode === code);
-                                    handleCellEdit(row.id, "maKhach", code);
-                                    if (corresponding) {
-                                      handleCellEdit(row.id, "tenKhach", corresponding.companyName);
-                                      if (corresponding.email) {
-                                        handleCellEdit(row.id, "resolvedEmail", corresponding.email);
-                                      }
-                                    }
-                                  }}
-                                  className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 bg-white"
-                                >
-                                  <option value="KH_CHUA_PHAN_LOAI">KH_CHUA_PHAN_LOAI</option>
-                                  {accountingCustomers.map((cust) => (
-                                    <option key={cust.customerCode} value={cust.customerCode}>
-                                      {cust.customerCode} - {cust.companyName.substring(0, 20)}...
-                                    </option>
-                                  ))}
-                                </select>
+                                <CustomerCodeEditor
+                                  row={row}
+                                  accountingCustomers={accountingCustomers}
+                                  handleCellEdit={handleCellEdit}
+                                />
                               ) : (
                                 <span className={`font-semibold font-mono whitespace-normal break-all inline-block max-w-full ${row.maKhach === "KH_CHUA_PHAN_LOAI" ? "text-amber-600 bg-amber-50 px-1 rounded" : "text-slate-900"}`}>
                                   {row.maKhach}
@@ -1906,6 +1934,15 @@ export default function App() {
               <div className="p-3 border-t border-slate-200 bg-slate-50 text-[11px] text-slate-400 text-center">
                 Mẹo kế toán: Nhấp vào nút "Chỉnh sửa" hình bút ở cột cuối của bất kì dòng nào để tùy ghi đè tài khoản hạch toán, Mã khách, hoặc bổ sung mã hợp đồng gốc theo nghiệp vụ thực tế.
               </div>
+              
+              <datalist id="accounting-customers-list">
+                <option value="KH_CHUA_PHAN_LOAI">KH_CHUA_PHAN_LOAI</option>
+                {accountingCustomers.map((cust) => (
+                  <option key={cust.customerCode} value={cust.customerCode}>
+                    {cust.customerCode} - {cust.companyName}
+                  </option>
+                ))}
+              </datalist>
             </section>
           </div>
         )}
