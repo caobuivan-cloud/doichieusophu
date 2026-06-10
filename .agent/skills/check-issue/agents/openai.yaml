@@ -1,0 +1,7 @@
+interface:
+  display_name: "Check Issue"
+  short_description: "Trace the root cause of a bug safely"
+  default_prompt: "Use $check-issue to trace the root cause of this bug without writing a fix yet."
+
+policy:
+  allow_implicit_invocation: true

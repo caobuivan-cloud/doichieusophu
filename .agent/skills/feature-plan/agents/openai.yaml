@@ -1,0 +1,7 @@
+interface:
+  display_name: "Feature Plan"
+  short_description: "Turn a request into a feature plan"
+  default_prompt: "Use $feature-plan to turn this request into FEATURE_PLAN.md and FEATURE_TASKS.md."
+
+policy:
+  allow_implicit_invocation: true

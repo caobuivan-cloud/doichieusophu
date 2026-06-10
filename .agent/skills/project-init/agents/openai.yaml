@@ -1,0 +1,7 @@
+interface:
+  display_name: "Project Init"
+  short_description: "Bootstrap or reconcile the repo docs"
+  default_prompt: "Use $project-init to bootstrap or reconcile the .agent documentation for this repository."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Update Docs"
+  short_description: "Update .agent docs from the current delta"
+  default_prompt: "Use $update-docs to update the right .agent docs from the current code and doc delta."
+
+policy:
+  allow_implicit_invocation: true

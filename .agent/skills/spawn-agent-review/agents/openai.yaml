@@ -1,0 +1,7 @@
+interface:
+  display_name: "Spawn Agent Review"
+  short_description: "Run delegated council review on a plan"
+  default_prompt: "Use $spawn-agent-review to run a delegated council review for this feature plan."
+
+policy:
+  allow_implicit_invocation: true

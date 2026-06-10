@@ -1,0 +1,7 @@
+interface:
+  display_name: "Docs Hygiene"
+  short_description: "Audit stale or orphaned .agent docs"
+  default_prompt: "Use $docs-hygiene to audit the .agent documentation graph and propose cleanup actions."
+
+policy:
+  allow_implicit_invocation: true

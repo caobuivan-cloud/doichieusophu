@@ -1,0 +1,6 @@
+{
+  "name": "Đối Chiếu Sổ Phụ Kế Toán - Giấy Báo Có",
+  "description": "Hệ thống trợ lý hạch toán kế toán Vccloud: Tự động đối chiếu sổ phụ ngân hàng, tra cứu mã khách hàng và xuất mẫu Giấy Báo Có kế toán chuẩn xác.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

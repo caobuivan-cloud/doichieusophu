@@ -1,0 +1,7 @@
+interface:
+  display_name: "Feature Coordinator"
+  short_description: "Execute a reviewed feature plan by phase"
+  default_prompt: "Use $feature-coordinator to execute the approved feature plan phase by phase."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Git Sync"
+  short_description: "Prepare a safe commit and push plan"
+  default_prompt: "Use $git-sync to inspect the worktree and prepare a safe commit and push plan."
+
+policy:
+  allow_implicit_invocation: true

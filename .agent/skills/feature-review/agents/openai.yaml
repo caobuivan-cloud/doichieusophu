@@ -1,0 +1,7 @@
+interface:
+  display_name: "Feature Review"
+  short_description: "Review a plan before implementation"
+  default_prompt: "Use $feature-review to review this feature plan for architecture, risk, and rollout gaps."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Codebase Audit"
+  short_description: "Audit code, generate tests, and report evidence-backed findings"
+  default_prompt: "Use $codebase-audit to inspect this repo or a requested scope for security, logic, performance, missing tests, and cleanup candidates; generate and run the necessary tests; then report only evidence-backed findings and remediation guidance."
+
+policy:
+  allow_implicit_invocation: true
