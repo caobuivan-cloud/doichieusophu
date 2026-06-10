@@ -38,6 +38,13 @@ import {
   AccountingCustomer
 } from "./sampleData";
 
+import { 
+  pullCustomersFromGoogleSheet, 
+  pushCustomersToGoogleSheet, 
+  writeActionLogToSheet,
+  DEFAULT_WEB_APP_URL 
+} from "./utils/googleSheetsSync";
+
 interface ProcessedRow {
   id: string; // Unique id for list tracking
   originalIndex: number; // Index in the original bank statement
@@ -118,7 +125,38 @@ export default function App() {
   const [aiError, setAiError] = useState<string | null>(null);
 
   // Tab navigation state
-  const [activeTab, setActiveTab] = useState<"reconciliation" | "customers">("reconciliation");
+  const [activeTab, setActiveTab] = useState<"reconciliation" | "customers" | "settings">("reconciliation");
+
+  // Google Sheets integration state
+  const [userEmail, setUserEmail] = useState<string>("Unknown User");
+
+  // Auto-pull and parse email from AI Hub hash
+  React.useEffect(() => {
+    // 1. Lấy email từ URL
+    const hash = window.location.hash || window.location.search;
+    const match = hash.match(/email=([^&]+)/);
+    if (match && match[1]) {
+      setUserEmail(decodeURIComponent(match[1]));
+    } else {
+      // Fallback nếu có lưu từ trước
+      const savedEmail = localStorage.getItem("google_sheets_user_email");
+      if (savedEmail) setUserEmail(savedEmail);
+    }
+
+    // 2. Auto-pull dữ liệu khi mở
+    const cfgStr = localStorage.getItem("google_sheets_sync_auto_pull");
+    const autoPull = cfgStr !== "false";
+    const webAppUrl = DEFAULT_WEB_APP_URL;
+
+    if (autoPull && webAppUrl) {
+      pullCustomersFromGoogleSheet(webAppUrl).then(data => {
+        if (data && data.length > 0) {
+          setAccountingCustomers(data);
+          console.log("Auto-pulled", data.length, "customers from Google Sheets");
+        }
+      });
+    }
+  }, []);
 
   // Automated auto-matching trigger state (Matching 1 + 2)
   const [isMatchedRun, setIsMatchedRun] = useState<boolean>(false);
@@ -212,6 +250,10 @@ export default function App() {
 
     setAccountingCustomers((prev) => [newCust, ...prev]);
     showToast("Đã thêm Mã KH mới thành công!", "success");
+
+    if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Thêm Mã Khách Hàng", `Thêm mới mã ${newCust.customerCode} (${newCust.companyName})`);
+    }
     
     // Clear inputs back
     setNewCustCode("");
@@ -225,6 +267,10 @@ export default function App() {
   const handleDeleteCustomer = (code: string) => {
     setAccountingCustomers((prev) => prev.filter((c) => c.customerCode !== code));
     showToast(`Đã xóa Mã KH "${code}" thành công!`, "success");
+
+    if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Xóa Mã Khách Hàng", `Đã xóa mã ${code}`);
+    }
   };
 
   // Clear entire customer list
@@ -232,6 +278,10 @@ export default function App() {
     setAccountingCustomers([]);
     setCustomerFile("Chưa nạp hoặc trống");
     showToast("Đã xóa sạch toàn bộ mã khách khỏi danh bạ chuẩn!", "success");
+
+    if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Xóa Sạch Bảng Mã", "Đã xóa toàn bộ dữ liệu bảng mã cục bộ");
+    }
   };
 
   // Begin inline customer editing
@@ -251,6 +301,10 @@ export default function App() {
     );
     showToast("Đã cập nhật thông tin thành công!", "success");
     setEditingCustomerCode(null);
+
+    if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Cập nhật Mã Khách Hàng", `Sửa thông tin mã ${code}`);
+    }
   };
 
   // Load sample dataset
@@ -307,8 +361,16 @@ export default function App() {
           showToast(`Đã nạp thành công file theo dõi Cloud: ${file.name}`, "success");
         } else if (type === "customer") {
           setCustomerFile(file.name);
-          parseCustomerCodes(rawJson);
+          const newCustomers = parseCustomerCodes(rawJson);
           showToast(`Đã cập nhật danh bạ khách chuẩn từ file: ${file.name}`, "success");
+          
+          // Tự động đồng bộ lên Google Sheets
+          pushCustomersToGoogleSheet(newCustomers, DEFAULT_WEB_APP_URL, userEmail).then(() => {
+            showToast("Đã đồng bộ lên Google Sheets thành công!", "success");
+          }).catch(err => {
+            console.error("Lỗi đồng bộ", err);
+            showToast("Đã xảy ra lỗi khi đồng bộ lên Google Sheets.", "error");
+          });
         }
       } catch (err: any) {
         console.error(err);
@@ -517,6 +579,7 @@ export default function App() {
       }
     }
     setAccountingCustomers(cleaned);
+    return cleaned;
   };
 
   // 1. Regular Expressions for Extracting Email Identities
@@ -965,6 +1028,16 @@ export default function App() {
 
     XLSX.utils.book_append_sheet(wb, ws, "GIAY_BAO_CO");
     XLSX.writeFile(wb, "GIAY_BAO_CO_VCCLOUD.xlsx");
+
+    // Ghi log hoạt động
+    if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+      writeActionLogToSheet(
+        DEFAULT_WEB_APP_URL,
+        userEmail,
+        "Xuất Báo Cáo GBC",
+        `Đã xuất file GIAY_BAO_CO_VCCLOUD.xlsx chứa ${wsData.length - 1} dòng.`
+      );
+    }
   };
 
   // Export Unclassified Customers for supplementing the standard customer list
@@ -1020,6 +1093,16 @@ export default function App() {
     XLSX.utils.book_append_sheet(wb, ws, "KH_CHUA_PHAN_LOAI");
     XLSX.writeFile(wb, "DANH_SACH_KH_CHUA_PHAN_LOAI.xlsx");
     showToast(`Đã xuất file chứa ${uniqueUnclassified.length} liên hệ chưa có mã khách.`, "success");
+
+    // Ghi log hoạt động
+    if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+      writeActionLogToSheet(
+        DEFAULT_WEB_APP_URL,
+        userEmail,
+        "Xuất KH Chưa Phân Loại",
+        `Đã xuất file DANH_SACH_KH_CHUA_PHAN_LOAI.xlsx chứa ${uniqueUnclassified.length} liên hệ.`
+      );
+    }
   };
 
   return (
@@ -1869,6 +1952,7 @@ export default function App() {
             </section>
           </div>
         )}
+
           </div>
           
           <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-auto shrink-0 w-full relative z-10">
