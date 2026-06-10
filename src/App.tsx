@@ -22,9 +22,12 @@ import {
   Sliders,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Plus,
   Trash2,
-  X
+  X,
+  Menu
 } from "lucide-react";
 import {
   sampleBankStatement,
@@ -92,6 +95,7 @@ export default function App() {
   // Selected file names for visual feedback
   const [bankFile, setBankFile] = useState<string>("");
   const [cloudFile, setCloudFile] = useState<string>("");
+  const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [customerFile, setCustomerFile] = useState<string>(() => {
     return "Sẵn dùng trên app (Lưu trữ)";
   });
@@ -963,20 +967,143 @@ export default function App() {
     XLSX.writeFile(wb, "GIAY_BAO_CO_VCCLOUD.xlsx");
   };
 
-  return (
-    <div id="root-container" className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
-      {/* Visual Header bar */}
-      <header id="app-header" className="bg-white border-b border-slate-300 sticky top-0 z-40 shadow-xs">
-        <div className="max-w-[1600px] mx-auto px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xl font-display shadow-sm">VC</div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-800 leading-none">VCCloud AI Accounting Assistant</h1>
-              <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Automated Reconciliation & Export System</p>
-            </div>
-          </div>
+  // Export Unclassified Customers for supplementing the standard customer list
+  const handleExportUnclassifiedXlsx = () => {
+    // Only get unique unclassified customers by email/name to avoid duplicates
+    const unclassifiedRows = processedRows.filter(r => r.maKhach === "KH_CHUA_PHAN_LOAI");
+    
+    if (unclassifiedRows.length === 0) {
+      showToast("Không có khách hàng nào chưa được phân loại để xuất.", "info");
+      return;
+    }
 
-          <div className="flex items-center space-x-4 w-full sm:w-auto justify-end">
+    // Deduplicate logic: use a Map to keep unique unclassified by email or name
+    const uniqueMap = new Map();
+    unclassifiedRows.forEach(r => {
+      // Use email as key if available, otherwise use name. Fallback to dienGiai
+      const key = r.resolvedEmail || r.tenKhach || r.dienGiai;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, r);
+      }
+    });
+
+    const uniqueUnclassified = Array.from(uniqueMap.values());
+
+    // Sheet formatted for Customer list import/supplement
+    const wsData = [
+      ["Mã khách", "Tên khách hàng", "Email", "Mã số thuế", "Địa chỉ", "Ghi chú (Nguồn gốc giao dịch)"]
+    ];
+
+    uniqueUnclassified.forEach((r) => {
+      wsData.push([
+        "", // Mã khách để trống để kế toán điền
+        r.tenKhach || "",
+        r.resolvedEmail || "",
+        "", // Mã số thuế chưa có
+        "", // Địa chỉ chưa có
+        r.dienGiai || ""
+      ]);
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    ws["!cols"] = [
+      { wch: 16 }, // Mã khách
+      { wch: 40 }, // Tên khách hàng
+      { wch: 30 }, // Email
+      { wch: 20 }, // Mã số thuế
+      { wch: 40 }, // Địa chỉ
+      { wch: 60 }, // Ghi chú
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "KH_CHUA_PHAN_LOAI");
+    XLSX.writeFile(wb, "DANH_SACH_KH_CHUA_PHAN_LOAI.xlsx");
+    showToast(`Đã xuất file chứa ${uniqueUnclassified.length} liên hệ chưa có mã khách.`, "success");
+  };
+
+  return (
+    <div id="root-container" className="min-h-screen bg-slate-50 text-slate-900 flex font-sans overflow-hidden">
+      {/* Sidebar Navigation */}
+      <aside className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col shrink-0 relative z-50 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`}>
+        <div className="h-20 border-b border-slate-100 flex items-center px-4 shrink-0">
+          {/* Logo */}
+          <div className="w-12 h-12 bg-[#ea580c] rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-sm shrink-0">VC</div>
+          {!isSidebarCollapsed && (
+            <div className="ml-3 overflow-hidden flex-1">
+              <h1 className="text-[17px] font-bold text-slate-800 leading-tight whitespace-nowrap">Tool Kế toán</h1>
+              <p className="text-[13px] text-slate-500 whitespace-nowrap">Assistant for Account</p>
+            </div>
+          )}
+        </div>
+        
+        {/* Collapse Button */}
+        <button 
+          onClick={() => setSidebarCollapsed(!isSidebarCollapsed)} 
+          className="absolute top-6 -right-4 w-8 h-8 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-800 shadow-sm cursor-pointer z-50"
+        >
+          {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+
+        <nav className="flex-1 flex flex-col gap-2 p-3 overflow-y-auto">
+          <button
+            onClick={() => setActiveTab("reconciliation")}
+            className={`flex items-center gap-3 p-3 rounded-lg transition-colors cursor-pointer ${
+              activeTab === "reconciliation" ? "bg-orange-50 text-orange-600 border-l-4 border-orange-500" : "text-slate-600 hover:bg-slate-100 border-l-4 border-transparent"
+            }`}
+            title="Đối Chiếu & Hạch Toán"
+          >
+            <ArrowRightLeft className={`w-5 h-5 shrink-0 ${activeTab === "reconciliation" ? "text-orange-600" : "text-slate-500"}`} />
+            {!isSidebarCollapsed && <span className={`font-semibold text-sm whitespace-nowrap ${activeTab === "reconciliation" ? "text-orange-700" : ""}`}>Đối Chiếu & Hạch Toán</span>}
+          </button>
+          
+          <button
+            onClick={() => {
+              setActiveTab("customers");
+              setCustomerPage(1);
+            }}
+            className={`flex items-center gap-3 p-3 rounded-lg transition-colors cursor-pointer ${
+              activeTab === "customers" ? "bg-orange-50 text-orange-600 border-l-4 border-orange-500" : "text-slate-600 hover:bg-slate-100 border-l-4 border-transparent"
+            }`}
+            title="Bảng Mã Khách Hàng"
+          >
+            <FileSpreadsheet className={`w-5 h-5 shrink-0 ${activeTab === "customers" ? "text-orange-600" : "text-slate-500"}`} />
+            {!isSidebarCollapsed && (
+              <div className="flex items-center justify-between w-full">
+                <span className={`font-semibold text-sm whitespace-nowrap ${activeTab === "customers" ? "text-orange-700" : ""}`}>Bảng Mã Khách</span>
+                <span className="px-1.5 py-0.5 text-[10px] bg-orange-100/50 text-orange-700 rounded-full font-bold">
+                  {accountingCustomers.length}
+                </span>
+              </div>
+            )}
+          </button>
+          
+          <button
+            onClick={() => setActiveTab("guide")}
+            className={`flex items-center gap-3 p-3 rounded-lg transition-colors cursor-pointer ${
+              activeTab === "guide" ? "bg-orange-50 text-orange-600 border-l-4 border-orange-500" : "text-slate-600 hover:bg-slate-100 border-l-4 border-transparent"
+            }`}
+            title="Hướng Dẫn Sử Dụng"
+          >
+            <Layers className={`w-5 h-5 shrink-0 ${activeTab === "guide" ? "text-orange-600" : "text-slate-500"}`} />
+            {!isSidebarCollapsed && <span className={`font-semibold text-sm whitespace-nowrap ${activeTab === "guide" ? "text-orange-700" : ""}`}>Hướng Dẫn Sử Dụng</span>}
+          </button>
+        </nav>
+      </aside>
+
+      {/* Main Workspace Area */}
+      <main className="flex-1 overflow-y-auto bg-slate-50 flex flex-col">
+        {/* Top Header inside Main Area for Status and Actions */}
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-40 px-6 py-4 flex items-center justify-between min-h-[80px]">
+           <div className="flex items-center gap-3">
+              <h2 className="text-lg font-bold text-slate-800">
+                 {activeTab === "reconciliation" && "Đối Chiếu & Hạch Toán Sổ Phụ"}
+                 {activeTab === "customers" && "Bảng Mã Khách Hàng Chuẩn"}
+                 {activeTab === "guide" && "Hướng Dẫn Vận Hành Hệ Thống"}
+              </h2>
+           </div>
+           
+           <div className="flex items-center space-x-4">
             <div className="text-right hidden md:block">
               <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">System Status</p>
               <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1 justify-end">
@@ -985,18 +1112,9 @@ export default function App() {
               </p>
             </div>
             
-            <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
+            <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                id="btn-load-sample"
-                onClick={handleLoadSample}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-md text-xs shadow-sm transition-colors cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Chạy thử dữ liệu mẫu
-              </button>
-              
+            <div className="flex items-center gap-2">
               {bankTransactions.length > 0 && (
                 <button
                   id="btn-reset"
@@ -1010,184 +1128,129 @@ export default function App() {
               )}
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="flex-1 max-w-[1600px] w-full mx-auto px-6 py-6 flex flex-col gap-6">
-        {/* Navigation Tabs Header Switcher */}
-        <div className="flex border-b border-slate-200">
-          <button
-            onClick={() => setActiveTab("reconciliation")}
-            className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
-              activeTab === "reconciliation"
-                ? "border-blue-600 text-blue-600 font-bold"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            Đối Chiếu &amp; Hạch Toán Sổ Phụ
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab("customers");
-              setCustomerPage(1);
-            }}
-            className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer relative ${
-              activeTab === "customers"
-                ? "border-blue-600 text-blue-600 font-bold"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            Bảng Mã Khách Hàng Chuẩn
-            <span className="ml-1.5 px-1.5 py-0.5 text-[10px] bg-blue-50 text-blue-600 rounded-full font-bold">
-              {accountingCustomers.length} mã
-            </span>
-          </button>
-        </div>
+        <div className="p-4 md:p-6 w-full max-w-[1600px] mx-auto flex flex-col gap-6">
 
-        {activeTab === "customers" ? (
+        {activeTab === "customers" && (
           <div id="customers-tab-view" className="flex flex-col gap-6 animate-fade-in-down">
-            {/* Header: Description and standard file uploader side-by-side */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Customer Directory Header Description */}
-              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm lg:col-span-2 flex flex-col justify-between">
-                <div className="flex items-start gap-4">
-                  <div className="p-3 bg-blue-50 rounded-lg text-blue-600 shrink-0">
-                    <FileSpreadsheet className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-slate-800">Cơ Sở Dữ Liệu Khách Hàng Kế Toán Hoạt Động (Danh bạ chuẩn)</h2>
-                    <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                      Bản đồ ánh xạ gốc chuẩn hóa liên kết giữa <strong>Email đối chiếu (mục lục Cloud)</strong> và <strong>Mã khách hàng kế toán / Tên pháp nhân đại diện</strong>. Sửa đổi trực tiếp tại đây để tác động lên kết quả của Matching 2. Danh sách này được lưu trữ tự động trên thiết bị của bạn.
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                  <div>
-                    Trạng thái dữ liệu chuẩn hóa: <span className="font-bold text-emerald-600">Sẵn dùng</span>
-                  </div>
-                  <div>
-                    Chế độ: <span className="font-semibold text-indigo-600 font-mono">Hardcoded Rules Match (Matching 2)</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bảng Mã Khách Hàng Kế Toán Uploader Card - Moved from Home page */}
-              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm relative flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Input Master</span>
-                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded uppercase">Sẵn chuẩn</span>
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-700">[Bảng mã khách hàng]</h3>
-                  <p className="text-xs text-slate-500 mb-4 mt-1 h-10 overflow-hidden text-ellipsis line-clamp-2">
-                    Danh bạ mã kế toán (.xlsx). Nạp file danh bạ chuẩn từ Excel để cập nhật nhanh toàn bộ danh sách.
-                  </p>
-                </div>
-
-                <div className="mt-2">
-                  <div className="border border-emerald-100 rounded bg-emerald-50/30 p-3 flex flex-col space-y-2">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-1.5 bg-white rounded shadow-xs border border-emerald-100">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                      </div>
-                      <div className="text-xs truncate">
-                        <p className="font-semibold text-emerald-800 truncate" title={customerFile}>{customerFile}</p>
-                        <p className="text-[10px] text-emerald-600 mt-0.5">{accountingCustomers.length} mã khách chuẩn đã nạp</p>
-                      </div>
-                    </div>
-                    <label className="text-center text-[11px] block text-indigo-650 hover:text-indigo-850 font-bold underline cursor-pointer mt-1 bg-white hover:bg-slate-50 py-1.5 border border-slate-200 rounded transition-colors shadow-xs">
-                      Cập nhật / Nạp bảng mã mới (.xlsx)
-                      <input
-                        type="file"
-                        accept=".xls,.xlsx"
-                        onChange={(e) => handleExcelUpload(e, "customer")}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Add Custom Customer & Search Panel */}
+            {/* Layout: Left Column (Upload + Add) & Right Column (Search/Table) */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
-              {/* Form: Add New Customer */}
-              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-3">
-                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1">
-                  <Plus className="w-4 h-4 text-emerald-500" />
-                  Thêm Mã Khách Hàng Thủ Công
-                </h3>
-                
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mã KH Kế toán *</label>
-                  <input
-                    type="text"
-                    value={newCustCode}
-                    onChange={(e) => setNewCustCode(e.target.value)}
-                    placeholder="e.g. KH_VNDIRECT, VCC_KHACHLE"
-                    className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden uppercase font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tên Công ty / Pháp nhân *</label>
-                  <input
-                    type="text"
-                    value={newCustName}
-                    onChange={(e) => setNewCustName(e.target.value)}
-                    placeholder="e.g. Công ty Cổ phần Chứng khoán VNDIRECT"
-                    className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Email đối chiếu Match 2 *</label>
-                  <input
-                    type="email"
-                    value={newCustEmail}
-                    onChange={(e) => setNewCustEmail(e.target.value)}
-                    placeholder="e.g. support@vndirect.com.vn"
-                    className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
+              {/* Left Column */}
+              <div className="flex flex-col gap-6">
+                {/* Bảng Mã Khách Hàng Kế Toán Uploader Card */}
+                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm relative flex flex-col justify-between">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mã số thuế</label>
-                    <input
-                      type="text"
-                      value={newCustTax}
-                      onChange={(e) => setNewCustTax(e.target.value)}
-                      placeholder="e.g. 0102030405"
-                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
-                    />
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Input Master</span>
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded uppercase">Sẵn chuẩn</span>
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-700">[Bảng mã khách hàng]</h3>
+                    <p className="text-xs text-slate-500 mb-4 mt-1 h-10 overflow-hidden text-ellipsis line-clamp-2">
+                      Danh bạ mã kế toán (.xlsx). Nạp file danh bạ chuẩn từ Excel để cập nhật nhanh toàn bộ danh sách.
+                    </p>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Địa chỉ</label>
-                    <input
-                      type="text"
-                      value={newCustAddress}
-                      onChange={(e) => setNewCustAddress(e.target.value)}
-                      placeholder="e.g. Hà Nội, Việt Nam"
-                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
-                    />
+
+                  <div className="mt-2">
+                    <div className="border border-emerald-100 rounded bg-emerald-50/30 p-3 flex flex-col space-y-2">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-1.5 bg-white rounded shadow-xs border border-emerald-100">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                        </div>
+                        <div className="text-xs truncate">
+                          <p className="font-semibold text-emerald-800 truncate" title={customerFile}>{customerFile}</p>
+                          <p className="text-[10px] text-emerald-600 mt-0.5">{accountingCustomers.length} mã khách chuẩn đã nạp</p>
+                        </div>
+                      </div>
+                      <label className="text-center text-[11px] block text-indigo-650 hover:text-indigo-850 font-bold underline cursor-pointer mt-1 bg-white hover:bg-slate-50 py-1.5 border border-slate-200 rounded transition-colors shadow-xs">
+                        Cập nhật / Nạp bảng mã mới (.xlsx)
+                        <input
+                          type="file"
+                          accept=".xls,.xlsx"
+                          onChange={(e) => handleExcelUpload(e, "customer")}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleAddCustomer}
-                  className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  Thêm Vào Bảng Danh Bạ
-                </button>
+                {/* Form: Add New Customer */}
+                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-3">
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1">
+                    <Plus className="w-4 h-4 text-emerald-500" />
+                    Thêm Mã Khách Hàng Thủ Công
+                  </h3>
+                  
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mã KH Kế toán *</label>
+                    <input
+                      type="text"
+                      value={newCustCode}
+                      onChange={(e) => setNewCustCode(e.target.value)}
+                      placeholder="e.g. KH_VNDIRECT, VCC_KHACHLE"
+                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden uppercase font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tên Công ty / Pháp nhân *</label>
+                    <input
+                      type="text"
+                      value={newCustName}
+                      onChange={(e) => setNewCustName(e.target.value)}
+                      placeholder="e.g. Công ty Cổ phần Chứng khoán VNDIRECT"
+                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Email đối chiếu Match 2 *</label>
+                    <input
+                      type="email"
+                      value={newCustEmail}
+                      onChange={(e) => setNewCustEmail(e.target.value)}
+                      placeholder="e.g. support@vndirect.com.vn"
+                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mã số thuế</label>
+                      <input
+                        type="text"
+                        value={newCustTax}
+                        onChange={(e) => setNewCustTax(e.target.value)}
+                        placeholder="e.g. 0102030405"
+                        className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Địa chỉ</label>
+                      <input
+                        type="text"
+                        value={newCustAddress}
+                        onChange={(e) => setNewCustAddress(e.target.value)}
+                        placeholder="e.g. Hà Nội, Việt Nam"
+                        className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddCustomer}
+                    className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Thêm Vào Bảng Danh Bạ
+                  </button>
+                </div>
               </div>
 
-              {/* Grid: Search and List View */}
+              {/* Right Column: Search and List View */}
               <div className="lg:col-span-2 bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-2">
                   <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -1353,197 +1416,147 @@ export default function App() {
               </div>
             </div>
           </div>
-        ) : (
-          <>
-            {/* Step-by-step Excel Files Upload Bento Grid */}
-            <section id="upload-bento" className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Box 1: Sổ Phụ Ngân Hàng */}
-          <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm relative flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Bước 1</span>
-                {bankFile ? (
-                  <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded uppercase">Uploaded</span>
-                ) : (
-                  <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold uppercase">Bắt buộc</span>
-                )}
-              </div>
-              <h3 className="text-sm font-bold text-slate-700">[Sổ phụ ngân hàng]</h3>
-              <p className="text-xs text-slate-500 mb-4 h-10 mt-1">
-                Bank Statement Data (.xlsx). Chứa giao dịch thực tế gửi về. Lọc bút toán phát sinh "Phải Có/Credit" &gt; 0.
-              </p>
-            </div>
+        )}
 
-            <div className="mt-4">
-              {bankFile ? (
-                <div className="border border-slate-250 rounded bg-slate-50 p-3">
-                  <div className="flex items-center justify-between gap-2 overflow-hidden">
-                    <div className="flex items-center space-x-3 min-w-0">
-                      <div className="p-2 bg-white rounded shadow-sm shrink-0">
-                        <FileSpreadsheet className="w-5 h-5 text-slate-400" />
-                      </div>
-                      <div className="text-xs min-w-0">
-                        <p className="font-semibold text-slate-700 truncate" title={bankFile}>{bankFile}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{bankTransactions.length} bút toán phát sinh Có</p>
-                      </div>
-                    </div>
-                    <label className="flex items-center text-center text-[10px] text-blue-600 hover:text-blue-800 font-bold border border-blue-200 hover:bg-white bg-white/80 px-2.5 py-1.5 rounded cursor-pointer shrink-0 transition-colors shadow-xs">
-                      Thay đổi
-                      <input
-                        type="file"
-                        accept=".xls,.xlsx"
-                        onChange={(e) => handleExcelUpload(e, "bank")}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-slate-400 rounded-lg py-5 px-3 text-center cursor-pointer transition-colors">
-                  <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                  <span className="text-xs font-semibold text-slate-600">Tải lên Sổ phụ</span>
-                  <span className="text-[10px] text-slate-400 mt-0.5">Kế toán • Hỗ trợ .xls, .xlsx</span>
-                  <input
-                    type="file"
-                    accept=".xls,.xlsx"
-                    onChange={(e) => handleExcelUpload(e, "bank")}
-                    className="hidden"
-                  />
-                </label>
-              )}
-            </div>
-          </div>
-
-          {/* Box 2: File Theo Dõi Dịch Vụ Cloud */}
-          <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm relative flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Bước 2</span>
-                {cloudFile ? (
-                  <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded uppercase">Uploaded</span>
-                ) : (
-                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold uppercase">Bổ trợ</span>
-                )}
-              </div>
-              <h3 className="text-sm font-bold text-slate-700">[File theo dõi Cloud]</h3>
-              <p className="text-xs text-slate-500 mb-4 h-10 mt-1">
-                Service Tracking Log (.xlsx). Bảng kỹ thuật chứa Email người nộp tiền tương ứng tài khoản dịch vụ thực nhận.
-              </p>
-            </div>
-
-            <div className="mt-4">
-              {cloudFile ? (
-                <div className="border border-slate-250 rounded bg-slate-50 p-3">
-                  <div className="flex items-center justify-between gap-2 overflow-hidden">
-                    <div className="flex items-center space-x-3 min-w-0">
-                      <div className="p-2 bg-white rounded shadow-sm shrink-0">
-                        <FileSpreadsheet className="w-5 h-5 text-slate-400" />
-                      </div>
-                      <div className="text-xs min-w-0">
-                        <p className="font-semibold text-slate-700 truncate" title={cloudFile}>{cloudFile}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{cloudRecords.length} dòng dữ liệu dịch vụ</p>
-                      </div>
-                    </div>
-                    <label className="flex items-center text-center text-[10px] text-blue-600 hover:text-blue-800 font-bold border border-blue-200 hover:bg-white bg-white/80 px-2.5 py-1.5 rounded cursor-pointer shrink-0 transition-colors shadow-xs">
-                      Thay đổi
-                      <input
-                        type="file"
-                        accept=".xls,.xlsx"
-                        onChange={(e) => handleExcelUpload(e, "cloud")}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-slate-400 rounded-lg py-5 px-3 text-center cursor-pointer transition-colors">
-                  <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                  <span className="text-xs font-semibold text-slate-600">Tải lên File Cloud</span>
-                  <span className="text-[10px] text-slate-400 mt-0.5">Dùng để tra Email tự động</span>
-                  <input
-                    type="file"
-                    accept=".xls,.xlsx"
-                    onChange={(e) => handleExcelUpload(e, "cloud")}
-                    className="hidden"
-                  />
-                </label>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {bankTransactions.length > 0 && (
-          <>
-            {/* Prominent Operational Match Trigger Banner */}
-            <section id="matching-trigger-banner" className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3 w-full justify-between sm:justify-start">
+        {activeTab === "reconciliation" && (
+          <div className="flex flex-col gap-6 animate-fade-in-down">
+            {/* Top row with 3 blocks or 2 blocks */}
+            <div className="flex flex-col xl:flex-row gap-4">
+              {/* Box 1: Sổ Phụ Ngân Hàng */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm relative flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-lg ${isMatchedRun ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
-                    <ArrowRightLeft className={`w-6 h-6 ${isMatchingLoading ? "animate-spin" : ""}`} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-sm">
-                      {isMatchedRun ? "Bộ Đối Soát Tự Động Đang Hoạt Động!" : "Sẵn Sàng Chạy Bộ Đối Soát Hạch Toán (M1 + M2)"}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5 max-w-xl leading-relaxed">
-                      {isMatchedRun 
-                        ? `Hệ thống đã tự động liên kết thành công diễn giải (M1) và tra mã danh bạ kế toán (M2). Phát hiện ${stats.matched} dòng khớp tự động bóc tách.`
-                        : `Đã nạp ${bankTransactions.length} bút toán ghi Có và ${cloudRecords.length} dòng dịch vụ Cloud. Sẵn sàng chạy hạch toán.`
-                      }
-                    </p>
-                  </div>
+                  <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Bước 1: Sổ phụ</span>
+                  {bankFile ? (
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded uppercase">Uploaded</span>
+                  ) : (
+                    <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold uppercase">Bắt buộc</span>
+                  )}
+                </div>
+                
+                <div>
+                  {bankFile ? (
+                    <div className="flex items-center gap-3">
+                      <div className="text-xs text-right">
+                        <p className="font-semibold text-slate-700 truncate max-w-[150px]" title={bankFile}>{bankFile}</p>
+                        <p className="text-[10px] text-slate-500">{bankTransactions.length} bút toán</p>
+                      </div>
+                      <label className="flex items-center text-center text-[10px] text-blue-600 hover:text-blue-800 font-bold border border-blue-200 hover:bg-white bg-white/80 px-2 py-1 rounded cursor-pointer transition-colors shadow-xs">
+                        Đổi file
+                        <input type="file" accept=".xls,.xlsx" onChange={(e) => handleExcelUpload(e, "bank")} className="hidden" />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 rounded py-1.5 px-3 text-center cursor-pointer transition-colors">
+                      <Upload className="w-3.5 h-3.5 text-slate-500 mr-1.5" />
+                      <span className="text-xs font-semibold text-slate-600">Tải lên</span>
+                      <input type="file" accept=".xls,.xlsx" onChange={(e) => handleExcelUpload(e, "bank")} className="hidden" />
+                    </label>
+                  )}
                 </div>
               </div>
 
-              <button
-                onClick={handlePerformAutomatedMatching}
-                disabled={isMatchingLoading}
-                className={`px-6 py-2.5 rounded font-bold text-xs shadow-sm cursor-pointer transition-colors flex items-center gap-2 whitespace-nowrap ${
-                  isMatchedRun 
-                    ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200" 
-                    : "bg-blue-600 hover:bg-blue-700 text-white animate-pulse"
-                }`}
-              >
-                {isMatchingLoading ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    Đang khớp hạch toán...
-                  </>
-                ) : isMatchedRun ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Chạy lại đối soát (Re-run)
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Thực Hiện Đối Chiếu (Matching)
-                  </>
-                )}
-              </button>
-            </section>
+              {/* Box 2: File Theo Dõi Dịch Vụ Cloud */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm relative flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Bước 2: File Cloud</span>
+                  {cloudFile ? (
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded uppercase">Uploaded</span>
+                  ) : (
+                    <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold uppercase">Bổ trợ</span>
+                  )}
+                </div>
+
+                <div>
+                  {cloudFile ? (
+                    <div className="flex items-center gap-3">
+                      <div className="text-xs text-right">
+                        <p className="font-semibold text-slate-700 truncate max-w-[150px]" title={cloudFile}>{cloudFile}</p>
+                        <p className="text-[10px] text-slate-500">{cloudRecords.length} dòng</p>
+                      </div>
+                      <label className="flex items-center text-center text-[10px] text-blue-600 hover:text-blue-800 font-bold border border-blue-200 hover:bg-white bg-white/80 px-2 py-1 rounded cursor-pointer transition-colors shadow-xs">
+                        Đổi file
+                        <input type="file" accept=".xls,.xlsx" onChange={(e) => handleExcelUpload(e, "cloud")} className="hidden" />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 rounded py-1.5 px-3 text-center cursor-pointer transition-colors">
+                      <Upload className="w-3.5 h-3.5 text-slate-500 mr-1.5" />
+                      <span className="text-xs font-semibold text-slate-600">Tải lên</span>
+                      <input type="file" accept=".xls,.xlsx" onChange={(e) => handleExcelUpload(e, "cloud")} className="hidden" />
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              {/* Prominent Operational Match Trigger Banner */}
+              {bankTransactions.length > 0 && (
+                <section id="matching-trigger-banner" className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex-1 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 w-full justify-between sm:justify-start">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${isMatchedRun ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                        <ArrowRightLeft className={`w-5 h-5 ${isMatchingLoading ? "animate-spin" : ""}`} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-800 text-sm">
+                          {isMatchedRun ? "Bộ Đối Soát Đã Hoạt Động" : "Sẵn Sàng Chạy Đối Soát"}
+                        </h3>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handlePerformAutomatedMatching}
+                    disabled={isMatchingLoading}
+                    className={`px-4 py-1.5 rounded font-bold text-xs shadow-sm cursor-pointer transition-colors flex items-center gap-2 whitespace-nowrap ${
+                      isMatchedRun 
+                        ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200" 
+                        : "bg-blue-600 hover:bg-blue-700 text-white animate-pulse"
+                    }`}
+                  >
+                    {isMatchingLoading ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        Đang khớp...
+                      </>
+                    ) : isMatchedRun ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Chạy lại
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Thực Hiện
+                      </>
+                    )}
+                  </button>
+                </section>
+              )}
+            </div>
 
             {/* Clean summary metrics bar */}
-            <section id="config-metrics-bar" className="bg-slate-900 border border-slate-800 text-white p-5 rounded-lg shadow-sm">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-                <div>
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tổng số dòng sổ phụ</h4>
-                  <p className="text-2xl font-extrabold text-white mt-1">{stats.total} <span className="text-xs font-normal text-slate-400">bản ghi</span></p>
+            {bankTransactions.length > 0 && (
+              <section id="config-metrics-bar" className="bg-slate-900 border border-slate-800 text-white p-3 rounded-lg shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tổng số dòng</h4>
+                    <p className="text-lg font-extrabold text-white">{stats.total} <span className="text-xs font-normal text-slate-400">bản ghi</span></p>
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Đã khớp</h4>
+                    <p className="text-lg font-extrabold text-emerald-400">{stats.matched} <span className="text-xs font-normal text-slate-400">giao dịch</span></p>
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Chưa khớp</h4>
+                    <p className="text-lg font-extrabold text-amber-400">{stats.unmatched} <span className="text-xs font-normal text-slate-400">giao dịch</span></p>
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tổng tiền báo Có</h4>
+                    <p className="text-lg font-extrabold text-blue-400">{formatVND(stats.totalAmount)}</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Đã khớp (Tìm thấy)</h4>
-                  <p className="text-2xl font-extrabold text-emerald-400 mt-1">{stats.matched} <span className="text-xs font-normal text-slate-400">giao dịch</span></p>
-                </div>
-                <div>
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Chưa khớp (Chờ định danh)</h4>
-                  <p className="text-2xl font-extrabold text-amber-400 mt-1">{stats.unmatched} <span className="text-xs font-normal text-slate-400">giao dịch</span></p>
-                </div>
-                <div>
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tổng số tiền báo Có</h4>
-                  <p className="text-2xl font-extrabold text-blue-400 mt-1">{formatVND(stats.totalAmount)}</p>
-                </div>
-              </div>
-            </section>
+              </section>
+            )}
 
             {/* Main Interactive Spreadsheet Editor Panel */}
             <section id="spreadsheet-workspace" className="bg-white border border-slate-300 rounded-lg shadow-sm overflow-hidden flex flex-col">
@@ -1592,13 +1605,23 @@ export default function App() {
                     />
                   </div>
 
-                  <button
-                    onClick={() => setShowExportModal(true)}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded text-xs shadow-sm cursor-pointer transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Generate XLSX Result
-                  </button>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={handleExportUnclassifiedXlsx}
+                      className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-semibold rounded text-xs shadow-sm cursor-pointer transition-colors"
+                      title="Xuất riêng danh sách chưa có mã khách để chuẩn hoá bổ sung"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Xuất KH Chưa Khớp
+                    </button>
+                    <button
+                      onClick={() => setShowExportModal(true)}
+                      className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded text-xs shadow-sm cursor-pointer transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Generate XLSX Result
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1801,57 +1824,57 @@ export default function App() {
                 Mẹo kế toán: Nhấp vào nút "Chỉnh sửa" hình bút ở cột cuối của bất kì dòng nào để tùy ghi đè tài khoản hạch toán, Mã khách, hoặc bổ sung mã hợp đồng gốc theo nghiệp vụ thực tế.
               </div>
             </section>
-          </>
+          </div>
         )}
 
-        {/* Empty status dashboard instructions */}
-        {bankTransactions.length === 0 && (
-          <section id="features-guide" className="bg-white p-7 rounded-xl border border-slate-200 shadow-xs max-w-4xl mx-auto flex flex-col md:flex-row gap-6 mt-4">
-            <div className="w-full md:w-1/2 flex flex-col justify-center">
-              <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-1.5">
-                <Layers className="w-5 h-5 text-indigo-500" />
-                Hướng dẫn vận hành hệ thống
-              </h3>
-              <ul className="text-xs text-slate-600 space-y-3 list-decimal list-inside pl-1">
-                <li>
-                  <strong className="text-slate-800">Tải lên các file Excel:</strong> Tiến hành nạp 2 file đầu vào bắt buộc gồm <span className="bg-slate-100 text-slate-800 px-1 rounded">Sổ phụ ngân hàng</span> và <span className="bg-slate-100 text-slate-800 px-1 rounded">Bảng mã khách hàng kế toán</span>.
-                </li>
-                <li>
-                  <strong className="text-slate-800">Đọc &amp; Phân tích tự động:</strong> Hệ thống tự động lọc các giao dịch "Có" phát sinh dòng tiền lớn hơn 0, phân tích chuỗi ký tự Email như <code className="bg-slate-100 text-slate-800 px-1 rounded font-mono">@gmail.com</code> hoặc tên công ty.
-                </li>
-                <li>
-                  <strong className="text-slate-800">Sửa đổi trực tiếp tại Bảng:</strong> Bạn có quyền tự ghi đè số tiền, mã khách hàng, tài khoản có hoặc thêm mã hợp đồng trực quan trước khi tải.
-                </li>
-                <li>
-                  <strong className="text-slate-800">Xuất file chuẩn Kế toán:</strong> Nhấp nút "Tải File" để tải xuống trực tiếp tài liệu Microsoft Excel (.xlsx) định dạng 11 cột chuẩn mực để import thẳng vào phần mềm kế toán.
-                </li>
-              </ul>
-            </div>
-
-            <div className="w-full md:w-1/2 bg-slate-50 p-5 rounded-lg border border-slate-150 flex flex-col justify-between">
-              <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide mb-1 flex items-center gap-1">
-                  💡 Bạn chưa chuẩn bị sẵn file dữ liệu?
-                </h4>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                  Không sao! Hãy nhấp chọn nút <strong className="text-emerald-700">"Chạy thử dữ liệu mẫu Vccloud"</strong> ở góc phía trên bên phải màn hình. 
-                  Ứng dụng sẽ nạp hệ thống dữ liệu hạch toán thực tế chuẩn chỉnh, cho phép bạn trải nghiệm đầy đủ tính năng tra cứu, đối soát AI, và tải Giấy Báo Có mẫu ngay lập tức.
-                </p>
+        {activeTab === "guide" && (
+          <div className="animate-fade-in-down p-2 flex flex-col gap-6">
+            <section id="features-guide" className="bg-white p-7 rounded-xl border border-slate-200 shadow-xs max-w-4xl mx-auto flex flex-col md:flex-row gap-6 mt-4">
+              <div className="w-full md:w-1/2 flex flex-col justify-center">
+                <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-1.5">
+                  <Layers className="w-5 h-5 text-indigo-500" />
+                  Hướng dẫn vận hành hệ thống
+                </h3>
+                <ul className="text-xs text-slate-600 space-y-3 list-decimal list-inside pl-1">
+                  <li>
+                    <strong className="text-slate-800">Tải lên các file Excel:</strong> Tiến hành nạp 2 file đầu vào bắt buộc gồm <span className="bg-slate-100 text-slate-800 px-1 rounded">Sổ phụ ngân hàng</span> và <span className="bg-slate-100 text-slate-800 px-1 rounded">Bảng mã khách hàng kế toán</span>.
+                  </li>
+                  <li>
+                    <strong className="text-slate-800">Đọc &amp; Phân tích tự động:</strong> Hệ thống tự động lọc các giao dịch "Có" phát sinh dòng tiền lớn hơn 0, phân tích chuỗi ký tự Email như <code className="bg-slate-100 text-slate-800 px-1 rounded font-mono">@gmail.com</code> hoặc tên công ty.
+                  </li>
+                  <li>
+                    <strong className="text-slate-800">Sửa đổi trực tiếp tại Bảng:</strong> Bạn có quyền tự ghi đè số tiền, mã khách hàng, tài khoản có hoặc thêm mã hợp đồng trực quan trước khi tải.
+                  </li>
+                  <li>
+                    <strong className="text-slate-800">Xuất file chuẩn Kế toán:</strong> Nhấp nút "Tải File" để tải xuống trực tiếp tài liệu Microsoft Excel (.xlsx) định dạng 11 cột chuẩn mực để import thẳng vào phần mềm kế toán.
+                  </li>
+                </ul>
               </div>
 
-              <div className="p-3 bg-indigo-50 border border-indigo-150 rounded-md text-[11px] text-indigo-800">
-                ⭐ <strong>Cặp khớp thông minh:</strong> Tự động bóc tách các trường hợp người dùng ghi liền không ký tự đặc biệt, ví dụ <code className="bg-indigo-100 px-1 rounded font-mono">minhle91719gmailcom</code> quy đổi chuẩn về <code className="bg-indigo-100 px-1 rounded font-mono">minhle.91719@gmail.com</code>.
-              </div>
-            </div>
-          </section>
-        )}
-          </>
-        )}
-      </main>
+              <div className="w-full md:w-1/2 bg-slate-50 p-5 rounded-lg border border-slate-150 flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide mb-1 flex items-center gap-1">
+                    💡 Bạn chưa chuẩn bị sẵn file dữ liệu?
+                  </h4>
+                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                    Không sao! Hãy nhấp chọn nút <strong className="text-emerald-700">"Chạy thử dữ liệu mẫu Vccloud"</strong> ở góc phía trên bên phải màn hình. 
+                    Ứng dụng sẽ nạp hệ thống dữ liệu hạch toán thực tế chuẩn chỉnh, cho phép bạn trải nghiệm đầy đủ tính năng tra cứu, đối soát AI, và tải Giấy Báo Có mẫu ngay lập tức.
+                  </p>
+                </div>
 
-      <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-auto">
-        Bản quyền &copy; 2026 Trợ Lý Kế Toán Doanh nghiệp Trung tâm dịch vụ Vccloud. Tất cả các quyền được bảo hộ.
-      </footer>
+                <div className="p-3 bg-indigo-50 border border-indigo-150 rounded-md text-[11px] text-indigo-800">
+                  ⭐ <strong>Cặp khớp thông minh:</strong> Tự động bóc tách các trường hợp người dùng ghi liền không ký tự đặc biệt, ví dụ <code className="bg-indigo-100 px-1 rounded font-mono">minhle91719gmailcom</code> quy đổi chuẩn về <code className="bg-indigo-100 px-1 rounded font-mono">minhle.91719@gmail.com</code>.
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+          </div>
+          
+          <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-auto shrink-0 w-full relative z-10">
+            Bản quyền &copy; 2026 Trợ Lý Kế Toán Doanh nghiệp Trung tâm dịch vụ Vccloud. Tất cả các quyền được bảo hộ.
+          </footer>
+        </main>
 
       {/* Excel Export Configuration Modal Popup */}
       {showExportModal && (
