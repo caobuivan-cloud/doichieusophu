@@ -44,6 +44,7 @@ import {
   writeActionLogToSheet,
   DEFAULT_WEB_APP_URL 
 } from "./utils/googleSheetsSync";
+import { getPortalUserEmail } from "./utils/portalAuth";
 
 interface ProcessedRow {
   id: string; // Unique id for list tracking
@@ -173,22 +174,38 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"reconciliation" | "customers" | "settings">("reconciliation");
 
   // Google Sheets integration state
-  const [userEmail, setUserEmail] = useState<string>("Unknown User");
+  const [userEmail, setUserEmail] = useState<string>(() => {
+    return localStorage.getItem("google_sheets_user_email") || "Kế toán viên";
+  });
 
-  // Auto-pull and parse email from AI Hub hash
+  // Auto-pull and parse email from AI Hub hash and IndexedDB
   React.useEffect(() => {
     // 1. Lấy email từ URL
     const hash = window.location.hash || window.location.search;
     const match = hash.match(/email=([^&]+)/);
     if (match && match[1]) {
-      setUserEmail(decodeURIComponent(match[1]));
+      const email = decodeURIComponent(match[1]);
+      setUserEmail(email);
+      localStorage.setItem("google_sheets_user_email", email);
     } else {
-      // Fallback nếu có lưu từ trước
-      const savedEmail = localStorage.getItem("google_sheets_user_email");
-      if (savedEmail) setUserEmail(savedEmail);
+      // 2. Thử lấy từ portal IndexedDB
+      getPortalUserEmail().then((portalEmail) => {
+        if (portalEmail) {
+          setUserEmail(portalEmail);
+          localStorage.setItem("google_sheets_user_email", portalEmail);
+        } else {
+          // Fallback nếu có lưu từ trước
+          const savedEmail = localStorage.getItem("google_sheets_user_email");
+          if (savedEmail) {
+            setUserEmail(savedEmail);
+          } else {
+            setUserEmail("Kế toán viên");
+          }
+        }
+      });
     }
 
-    // 2. Auto-pull dữ liệu khi mở
+    // 3. Auto-pull dữ liệu khi mở
     const cfgStr = localStorage.getItem("google_sheets_sync_auto_pull");
     const autoPull = cfgStr !== "false";
     const webAppUrl = DEFAULT_WEB_APP_URL;
@@ -1217,6 +1234,25 @@ export default function App() {
             {!isSidebarCollapsed && <span className={`font-semibold text-sm whitespace-nowrap ${activeTab === "guide" ? "text-orange-700" : ""}`}>Hướng Dẫn Sử Dụng</span>}
           </button>
         </nav>
+
+        {/* User Profile Footer */}
+        <div className="border-t border-slate-100 p-3 bg-slate-50/50 mt-auto shrink-0 overflow-hidden">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 font-bold text-sm shrink-0 shadow-sm">
+              {userEmail ? userEmail.charAt(0).toUpperCase() : "K"}
+            </div>
+            {!isSidebarCollapsed && (
+              <div className="overflow-hidden flex-1 min-w-0">
+                <p className="text-xs font-bold text-slate-700 truncate" title={userEmail}>
+                  {userEmail}
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold truncate">
+                  {userEmail && userEmail !== "Kế toán viên" ? "Đã đăng nhập portal" : "Chế độ offline"}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
       </aside>
 
       {/* Main Workspace Area */}
