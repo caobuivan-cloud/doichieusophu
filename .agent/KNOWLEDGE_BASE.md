@@ -23,3 +23,5 @@ Lưu trữ những **quyết định kiến trúc** quan trọng và **lý do ch
 ## Ongoing Decisions
 
 - 2026-06-10 Khởi tạo hệ thống tài liệu agent chuẩn (`.agent/`). Why: Giúp onboarding AI agents nhanh chóng và giữ chuẩn mực cho các phiên làm việc sau theo chuẩn VCC agent stack.
+- 2026-06-15 Tách biệt state cấu hình xuất Excel (`exportConfig`) khỏi state các dòng đối soát (`processedRows`/`manualRows`). Why: Tránh kích hoạt các tính toán nặng (re-matching/re-computing) trên lưới hiển thị đối soát chính khi người dùng gõ phím thay đổi thông tin trên Modal cấu hình xuất.
+- 2026-06-15 Thực hiện xuất Excel và ép kiểu Text cell (`t: 's'`) trực tiếp trên trình duyệt bằng SheetJS. Why: Tiết kiệm tài nguyên server, đảm bảo dữ liệu thô dạng mã kế toán (như số tài khoản, mã khách hàng, số chứng từ) không bị Excel tự động biến đổi hoặc làm mất số 0 ở đầu khi kế toán import vào Misa/Fast.

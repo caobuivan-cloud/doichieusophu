@@ -45,6 +45,12 @@ import {
   DEFAULT_WEB_APP_URL 
 } from "./utils/googleSheetsSync";
 import { getPortalUserEmail } from "./utils/portalAuth";
+import {
+  normalizeDate,
+  cleanReason,
+  generateDocumentNumber,
+  parseExchangeRate
+} from "./utils/exportHelpers";
 
 interface ProcessedRow {
   id: string; // Unique id for list tracking
@@ -163,6 +169,20 @@ export default function App() {
   const [globalVuViec, setGlobalVuViec] = useState("VV_CLOUD");
   const [globalBoPhan, setGlobalBoPhan] = useState("BP_VCCLOUD");
 
+  // Export configurations for 21-column template (does not trigger recompute on preview grid)
+  const [exportConfig, setExportConfig] = useState({
+    dvcs: "HANOI",
+    tkNo: "112104",
+    maGd: "2",
+    soCtStart: "",
+    maNt: "VND",
+    tyGia: "1",
+    tkCo: "131",
+    vuViec: "CLOUD",
+    boPhan: "DIG.TRAN",
+    maQuyen: "BC" + new Date().getFullYear()
+  });
+
   // Detailed modal or inline editing state
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
 
@@ -224,6 +244,7 @@ export default function App() {
   const [isMatchedRun, setIsMatchedRun] = useState<boolean>(false);
   const [isMatchingLoading, setIsMatchingLoading] = useState<boolean>(false);
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
+  const [showWarningConfirmModal, setShowWarningConfirmModal] = useState<boolean>(false);
 
   // Customer Master tab interactive search and customer management form
   const [searchCustomerQuery, setSearchCustomerQuery] = useState("");
@@ -1026,66 +1047,134 @@ export default function App() {
     });
   }, [processedRows, searchQuery, matchFilter]);
 
+  // Validation checks for exportConfig in Modal
+  const isTyGiaValValid = parseExchangeRate(exportConfig.tyGia) !== null;
+  const isSoCtStartValid = /([0-9]+)$/.test(exportConfig.soCtStart);
+  const hasValidationError = 
+    !isTyGiaValValid || 
+    !isSoCtStartValid || 
+    !exportConfig.dvcs.trim() || 
+    !exportConfig.tkNo.trim() || 
+    !exportConfig.maGd.trim() || 
+    !exportConfig.maNt.trim() || 
+    !exportConfig.tkCo.trim() || 
+    !exportConfig.vuViec.trim() || 
+    !exportConfig.boPhan.trim() || 
+    !exportConfig.maQuyen.trim();
+
   // Export to standard formatted Excel Workbook
   const handleExportXlsx = () => {
-    if (processedRows.length === 0) {
+    if (filteredRows.length === 0) {
       showToast("Không có dữ liệu giao dịch để xuất file.", "error");
       return;
     }
 
-    // Sheet formatted with top titles exactly following Vietnamese photo rules
-    const wsData = [
-      ["CÔNG TY CP VCCORP", "", "", "", "", "", "", "", "", "", ""],
-      ["", "", "", "", "", "", "", "", "", "", ""],
-      ["", "", "", "GIẤY BÁO CÓ", "", "", "", "", "", "", ""],
-      ["", "", "", "", "", "", "", "", "", "", ""],
-      [
-        "Tk có",
-        "Tên tk có",
-        "Mã khách",
-        "Tên khách hàng",
-        "Tiền",
-        "Diễn giải",
-        "Vụ việc",
-        "Bộ phận",
-        "Hợp đồng",
-        "Bảng kê",
-        "TD2"
-      ]
+    const parsedTyGia = parseExchangeRate(exportConfig.tyGia) || 1;
+
+    // Row 1 of Worksheet: Column Headers directly
+    const headers = [
+      "ĐVCS",
+      "Mã khách",
+      "Người nhận tiền",
+      "Lý do nộp",
+      "Tài khoản nợ",
+      "Mã giao dịch",
+      "Số chứng từ",
+      "Ngày chứng từ",
+      "Mã ngoại tệ",
+      "Tỷ giá",
+      "Tk có",
+      "Mã khách ct",
+      "Tiền nt",
+      "Tiền",
+      "Diễn giải",
+      "Vụ việc",
+      "Bộ phận",
+      "Hợp đồng",
+      "Bảng kê",
+      "TD2",
+      "Mã quyển"
     ];
 
-    processedRows.forEach((r) => {
+    const wsData: any[] = [headers];
+
+    filteredRows.forEach((r, idx) => {
+      const finalTkCo = manualRows[r.id]?.tkCo || exportConfig.tkCo;
+      const finalVuViec = manualRows[r.id]?.vuViec || exportConfig.vuViec;
+      const finalBoPhan = manualRows[r.id]?.boPhan || exportConfig.boPhan;
+      const cleanDienGiai = cleanReason(r.dienGiai);
+      const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, idx);
+      const formattedDate = normalizeDate(r.date);
+
       wsData.push([
-        r.tkCo,
-        r.tenTkCo,
-        r.maKhach,
-        r.tenKhach,
-        r.tien, // Integer amount
+        { v: exportConfig.dvcs, t: "s" },
+        { v: r.maKhach, t: "s" },
+        { v: "", t: "s" },
+        cleanDienGiai,
+        { v: exportConfig.tkNo, t: "s" },
+        { v: exportConfig.maGd, t: "s" },
+        { v: formattedDocNum, t: "s" },
+        formattedDate,
+        exportConfig.maNt,
+        parsedTyGia,
+        { v: finalTkCo, t: "s" },
+        { v: r.maKhach, t: "s" },
+        r.tien,
+        r.tien * parsedTyGia,
         r.dienGiai,
-        r.vuViec,
-        r.boPhan,
-        r.hopDong,
-        r.bangKe,
-        r.td2
+        { v: finalVuViec, t: "s" },
+        { v: finalBoPhan, t: "s" },
+        { v: r.hopDong || "", t: "s" },
+        "",
+        "",
+        { v: exportConfig.maQuyen, t: "s" }
       ]);
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-    // Columns styling for perfect viewport rendering in accounting software
+    // Enforce cell types in worksheet object explicitly
+    const colLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U"];
+    const forceStringCols = [0, 1, 2, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 17, 18, 19, 20];
+
+    for (let rIdx = 1; rIdx < wsData.length; rIdx++) {
+      colLetters.forEach((letter, cIdx) => {
+        const cellRef = `${letter}${rIdx + 1}`;
+        if (ws[cellRef]) {
+          if (forceStringCols.includes(cIdx)) {
+            ws[cellRef].t = 's';
+            if (ws[cellRef].v !== undefined && ws[cellRef].v !== null) {
+              ws[cellRef].v = String(ws[cellRef].v);
+            }
+          }
+        }
+      });
+    }
+
+    // Set columns width
     ws["!cols"] = [
-      { wch: 10 }, // Tk có
-      { wch: 24 }, // Tên tk có
+      { wch: 10 }, // ĐVCS
       { wch: 16 }, // Mã khách
-      { wch: 42 }, // Tên khách hàng
+      { wch: 16 }, // Người nhận tiền
+      { wch: 40 }, // Lý do nộp
+      { wch: 10 }, // Tài khoản nợ
+      { wch: 12 }, // Mã giao dịch
+      { wch: 14 }, // Số chứng từ
+      { wch: 12 }, // Ngày chứng từ
+      { wch: 10 }, // Mã ngoại tệ
+      { wch: 10 }, // Tỷ giá
+      { wch: 10 }, // Tk có
+      { wch: 16 }, // Mã khách ct
+      { wch: 16 }, // Tiền nt
       { wch: 16 }, // Tiền
-      { wch: 65 }, // Diễn giải
+      { wch: 50 }, // Diễn giải
       { wch: 12 }, // Vụ việc
-      { wch: 14 }, // Bộ phận
+      { wch: 12 }, // Bộ phận
       { wch: 16 }, // Hợp đồng
       { wch: 10 }, // Bảng kê
-      { wch: 8 }   // TD2
+      { wch: 10 }, // TD2
+      { wch: 12 }  // Mã quyển
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, "GIAY_BAO_CO");
@@ -2036,14 +2125,14 @@ export default function App() {
       {/* Excel Export Configuration Modal Popup */}
       {showExportModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
             {/* Modal Header */}
-            <div className="bg-slate-950 text-white p-5 flex items-center justify-between">
+            <div className="bg-slate-950 text-white p-5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Download className="w-5 h-5 text-emerald-400" />
                 <div>
-                  <h3 className="font-bold text-sm">Cấu Hình Hạch Toán Trước Khi Xuất Excel</h3>
-                  <p className="text-[10px] text-slate-400">Thiết lập các thông tin mặc định áp dụng toàn cục cho file đầu ra</p>
+                  <h3 className="font-bold text-sm">Cấu Hình Hạch Toán &amp; Xuất Excel 21 Cột</h3>
+                  <p className="text-[10px] text-slate-400">Thiết lập các thông tin mặc định áp dụng khi xuất file Giấy Báo Có</p>
                 </div>
               </div>
               <button 
@@ -2055,75 +2144,323 @@ export default function App() {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-4 text-left">
-              <div className="p-3 bg-blue-50 border border-blue-100 rounded text-xs text-blue-800 leading-relaxed">
-                👉 Vui lòng điều chỉnh thông tin tài khoản hạch toán, dự án, bộ phận mặc định dưới đây. Hệ thống sẽ tự động bổ sung thông tin này vào các cột tương ứng khi tải xuống Excel.
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 text-left">
+              {/* Note alert */}
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 leading-relaxed">
+                👉 Cấu hình dưới đây được tách biệt với bảng đối chiếu, chỉ áp dụng trực tiếp khi xuất file Excel hạch toán. Dữ liệu hạch toán xuất ra sẽ tuân theo bộ lọc hiện tại của bạn.
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Cột A: TK CÓ</label>
-                  <input
-                    type="text"
-                    value={globalTkCo}
-                    onChange={(e) => setGlobalTkCo(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
-                    placeholder="131"
-                  />
-                </div>
+              {/* Grid 2 Columns for Sections */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Cột B: TÊN TK CÓ</label>
-                  <input
-                    type="text"
-                    value={globalTenTkCo}
-                    onChange={(e) => setGlobalTenTkCo(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
-                    placeholder="Phải thu của khách hàng"
-                  />
+                {/* Nhóm 1: Thông tin chứng từ */}
+                <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide border-b border-slate-200 pb-1.5">
+                    <FileSpreadsheet className="w-4 h-4 text-blue-500" />
+                    Thông tin chứng từ
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 1: ĐVCS *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.dvcs}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, dvcs: e.target.value }))}
+                        className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 6: Mã GD *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.maGd}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, maGd: e.target.value }))}
+                        className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 7: Số CT bắt đầu *</label>
+                      <input
+                        type="text"
+                        placeholder="Ví dụ: GBC004774 hoặc 004774"
+                        value={exportConfig.soCtStart}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, soCtStart: e.target.value }))}
+                        className={`w-full text-xs px-2.5 py-1.5 bg-white border rounded focus:ring-1 focus:outline-hidden font-mono ${
+                          exportConfig.soCtStart && !/([0-9]+)$/.test(exportConfig.soCtStart)
+                            ? "border-red-400 focus:ring-red-500"
+                            : "border-slate-200 focus:ring-blue-600"
+                        }`}
+                      />
+                      {exportConfig.soCtStart && !/([0-9]+)$/.test(exportConfig.soCtStart) && (
+                        <p className="text-[9px] text-red-500 mt-1 font-semibold">⚠️ Số chứng từ bắt đầu phải chứa hậu tố số ở cuối.</p>
+                      )}
+                      {!exportConfig.soCtStart && (
+                        <p className="text-[9px] text-amber-600 mt-1 font-semibold">⚠️ Cần nhập số chứng từ bắt đầu.</p>
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 21: Mã quyển *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.maQuyen}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, maQuyen: e.target.value }))}
+                        className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Cột G: MÃ VỤ VIỆC</label>
-                  <input
-                    type="text"
-                    value={globalVuViec}
-                    onChange={(e) => setGlobalVuViec(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
-                    placeholder="VV_CLOUD"
-                  />
+                {/* Nhóm 2: Tài khoản */}
+                <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-4 flex flex-col">
+                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide border-b border-slate-200 pb-1.5">
+                    <Layers className="w-4 h-4 text-blue-500" />
+                    Tài khoản hạch toán
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 5: TK Nợ *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.tkNo}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, tkNo: e.target.value }))}
+                        className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 11: TK Có mặc định *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.tkCo}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, tkCo: e.target.value }))}
+                        className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-slate-400 mt-auto leading-relaxed pt-2">
+                    * Các dòng hạch toán đã được kế toán sửa đổi thủ công tài khoản Có trên grid preview sẽ giữ nguyên giá trị riêng đó khi xuất Excel.
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Cột H: BỘ PHẬN</label>
-                  <input
-                    type="text"
-                    value={globalBoPhan}
-                    onChange={(e) => setGlobalBoPhan(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
-                    placeholder="BP_VCCLOUD"
-                  />
+                {/* Nhóm 3: Tiền tệ */}
+                <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide border-b border-slate-200 pb-1.5">
+                    <Sparkles className="w-4 h-4 text-blue-500" />
+                    Tiền tệ
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 9: Ngoại tệ *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.maNt}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, maNt: e.target.value }))}
+                        className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 10: Tỷ giá *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.tyGia}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, tyGia: e.target.value }))}
+                        className={`w-full text-xs px-2.5 py-1.5 bg-white border rounded focus:ring-1 focus:outline-hidden font-mono ${
+                          exportConfig.tyGia && parseExchangeRate(exportConfig.tyGia) === null
+                            ? "border-red-400 focus:ring-red-500"
+                            : "border-slate-200 focus:ring-blue-600"
+                        }`}
+                      />
+                      {exportConfig.tyGia && parseExchangeRate(exportConfig.tyGia) === null && (
+                        <p className="text-[9px] text-red-500 mt-1 font-semibold">⚠️ Tỷ giá không hợp lệ (ví dụ nhập: 24,500 hoặc 1.000.000).</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {/* Nhóm 4: Mã phân tích */}
+                <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide border-b border-slate-200 pb-1.5">
+                    <Settings className="w-4 h-4 text-blue-500" />
+                    Mã hạch toán phân tích
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 16: Vụ việc mặc định *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.vuViec}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, vuViec: e.target.value }))}
+                        className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cột 17: Bộ phận mặc định *</label>
+                      <input
+                        type="text"
+                        value={exportConfig.boPhan}
+                        onChange={(e) => setExportConfig(prev => ({ ...prev, boPhan: e.target.value }))}
+                        className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Dòng Preview Hạch Toán Mẫu */}
+              <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/20 space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide">
+                  <Search className="w-4 h-4 text-indigo-500" />
+                  Xem trước dòng hạch toán đầu tiên (Excel Row 2 Preview)
+                </h4>
+                {filteredRows.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Không có dữ liệu giao dịch hiển thị hiện tại để hiển thị preview.</p>
+                ) : (
+                  (() => {
+                    const r = filteredRows[0];
+                    const parsedTyGia = parseExchangeRate(exportConfig.tyGia) || 1;
+                    const finalTkCo = manualRows[r.id]?.tkCo || exportConfig.tkCo;
+                    const finalVuViec = manualRows[r.id]?.vuViec || exportConfig.vuViec;
+                    const finalBoPhan = manualRows[r.id]?.boPhan || exportConfig.boPhan;
+                    const cleanDienGiai = cleanReason(r.dienGiai);
+                    const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, 0);
+                    const formattedDate = normalizeDate(r.date);
+                    
+                    return (
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-xs">
+                        <table className="border-collapse text-[10px] min-w-[2000px] w-full text-left font-mono">
+                          <thead>
+                            <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                              <th className="border-r border-slate-200 p-2 w-20">1. ĐVCS</th>
+                              <th className="border-r border-slate-200 p-2 w-32">2. Mã khách</th>
+                              <th className="border-r border-slate-200 p-2 w-24">3. Người nhận</th>
+                              <th className="border-r border-slate-200 p-2 w-[300px]">4. Lý do nộp</th>
+                              <th className="border-r border-slate-200 p-2 w-20">5. TK Nợ</th>
+                              <th className="border-r border-slate-200 p-2 w-16">6. Mã GD</th>
+                              <th className="border-r border-slate-200 p-2 w-28">7. Số CT</th>
+                              <th className="border-r border-slate-200 p-2 w-24">8. Ngày CT</th>
+                              <th className="border-r border-slate-200 p-2 w-20">9. Ngoại tệ</th>
+                              <th className="border-r border-slate-200 p-2 w-20">10. Tỷ giá</th>
+                              <th className="border-r border-slate-200 p-2 w-20">11. TK Có</th>
+                              <th className="border-r border-slate-200 p-2 w-32">12. Mã khách ct</th>
+                              <th className="border-r border-slate-200 p-2 w-28 text-right">13. Tiền nt</th>
+                              <th className="border-r border-slate-200 p-2 w-28 text-right">14. Tiền</th>
+                              <th className="border-r border-slate-200 p-2 w-[300px]">15. Diễn giải</th>
+                              <th className="border-r border-slate-200 p-2 w-20">16. Vụ việc</th>
+                              <th className="border-r border-slate-200 p-2 w-24">17. Bộ phận</th>
+                              <th className="border-r border-slate-200 p-2 w-28">18. Hợp đồng</th>
+                              <th className="border-r border-slate-200 p-2 w-16">19. Bảng kê</th>
+                              <th className="border-r border-slate-200 p-2 w-16">20. TD2</th>
+                              <th className="p-2 w-24">21. Mã quyển</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="divide-x divide-slate-200 text-slate-800">
+                              <td className="p-2 truncate font-semibold text-slate-500">{exportConfig.dvcs}</td>
+                              <td className="p-2 truncate font-bold">{r.maKhach}</td>
+                              <td className="p-2 italic text-slate-400">— Trống —</td>
+                              <td className="p-2 whitespace-normal break-words font-sans text-slate-650" title={cleanDienGiai}>{cleanDienGiai}</td>
+                              <td className="p-2 font-semibold text-slate-600">{exportConfig.tkNo}</td>
+                              <td className="p-2 text-center text-slate-500">{exportConfig.maGd}</td>
+                              <td className="p-2 font-bold text-indigo-700">{formattedDocNum || <span className="text-red-500">Chờ nhập...</span>}</td>
+                              <td className="p-2 text-slate-500">{formattedDate}</td>
+                              <td className="p-2 text-center">{exportConfig.maNt}</td>
+                              <td className="p-2 text-center text-indigo-650">{parsedTyGia}</td>
+                              <td className="p-2 font-semibold text-slate-600">{finalTkCo}</td>
+                              <td className="p-2 truncate">{r.maKhach}</td>
+                              <td className="p-2 text-right font-bold">{formatVND(r.tien)}</td>
+                              <td className="p-2 text-right font-extrabold text-blue-700">{formatVND(r.tien * parsedTyGia)}</td>
+                              <td className="p-2 whitespace-normal break-words font-sans text-slate-450 italic" title={r.dienGiai}>{r.dienGiai}</td>
+                              <td className="p-2 truncate">{finalVuViec}</td>
+                              <td className="p-2 truncate">{finalBoPhan}</td>
+                              <td className="p-2 truncate">{r.hopDong || <span className="text-slate-350 font-sans italic">Trống</span>}</td>
+                              <td className="p-2 italic text-slate-400">— Trống —</td>
+                              <td className="p-2 italic text-slate-400">— Trống —</td>
+                              <td className="p-2 truncate font-semibold text-slate-500">{exportConfig.maQuyen}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()
+                )}
               </div>
             </div>
 
             {/* Modal Footer */}
+            <div className="bg-slate-50 p-4 border-t border-slate-150 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-400 italic">
+                {filteredRows.length > 0 ? `Xuất ${filteredRows.length} dòng hạch toán đang được lọc` : "Không có dòng dữ liệu hợp lệ"}
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  onClick={() => {
+                    const hasUnclassified = filteredRows.some(r => r.maKhach === "KH_CHUA_PHAN_LOAI");
+                    if (hasUnclassified) {
+                      setShowWarningConfirmModal(true);
+                    } else {
+                      handleExportXlsx();
+                      setShowExportModal(false);
+                    }
+                  }}
+                  disabled={hasValidationError || filteredRows.length === 0}
+                  className={`px-5 py-2 font-semibold rounded text-xs shadow-sm transition-colors flex items-center gap-2 cursor-pointer ${
+                    hasValidationError || filteredRows.length === 0
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-100"
+                      : "bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white"
+                  }`}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Xác nhận xuất (.xlsx)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWarningConfirmModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center z-[60] p-4 animate-in fade-in duration-100">
+          <div className="bg-white rounded-xl shadow-2xl border border-rose-100 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-rose-950 text-rose-100 p-5 flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-rose-400 shrink-0" />
+              <div>
+                <h3 className="font-bold text-sm">Cảnh Báo Dữ Liệu Chưa Đồng Bộ</h3>
+                <p className="text-[10px] text-rose-300">Phát hiện dòng hạch toán chưa khớp mã khách hàng</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-3 text-xs text-slate-600 leading-relaxed text-left">
+              <p>
+                Hiện tại có <strong className="text-rose-600">{filteredRows.filter(r => r.maKhach === "KH_CHUA_PHAN_LOAI").length} dòng</strong> hạch toán đang mang mã mặc định <code className="bg-slate-100 px-1 py-0.5 rounded text-rose-700 font-mono font-bold">KH_CHUA_PHAN_LOAI</code>.
+              </p>
+              <p>
+                Việc xuất file hạch toán khi chưa phân loại có thể gây lỗi hoặc sai lệch đối chiếu khi import vào phần Misa/Fast.
+              </p>
+              <p className="font-semibold text-slate-800">
+                Bạn có chắc chắn muốn bỏ qua và tiếp tục xuất file Excel không?
+              </p>
+            </div>
             <div className="bg-slate-50 p-4 border-t border-slate-150 flex items-center justify-end gap-3">
               <button
-                onClick={() => setShowExportModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                onClick={() => setShowWarningConfirmModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-650 hover:bg-slate-100 rounded cursor-pointer transition-colors"
               >
-                Hủy bỏ
+                Quay lại chỉnh sửa
               </button>
               <button
                 onClick={() => {
                   handleExportXlsx();
                   setShowExportModal(false);
+                  setShowWarningConfirmModal(false);
                 }}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded text-xs shadow-sm transition-colors flex items-center gap-2 cursor-pointer"
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold rounded text-xs shadow-sm transition-colors cursor-pointer"
               >
-                <Download className="w-3.5 h-3.5" />
-                Tải xuống Excel (.xlsx)
+                Vẫn xuất Excel (.xlsx)
               </button>
             </div>
           </div>
