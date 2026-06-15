@@ -180,3 +180,38 @@ export async function pushCustomersToGoogleSheet(
     throw err;
   }
 }
+
+export async function pushBizflyCustomersToGoogleSheet(
+  values: any[][], 
+  webAppUrl: string, 
+  userStr: string,
+  token: string = ""
+): Promise<void> {
+  if (!webAppUrl || values.length === 0) return;
+
+  try {
+    const response = await fetch(webAppUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "overwrite_rules",
+        sheetName: "Bảng Mã Khách Hàng BIZFLY",
+        rules: values,
+        user: userStr,
+        token: token
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Web App returned error: ${response.statusText}`);
+    } else {
+      const result = await response.json();
+      if (result.status === "error") {
+        throw new Error(result.message || "Lỗi không xác định từ Apps Script");
+      }
+    }
+  } catch(err) {
+    console.error("Failed to push BIZFLY customers to sheets", err);
+    throw err;
+  }
+}

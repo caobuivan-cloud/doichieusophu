@@ -48,7 +48,7 @@ function setupSheets() {
 
 // Cấu hình Allowlist tách biệt Read/Write để bảo vệ an toàn dữ liệu
 var READ_ALLOWLIST = ["Bảng Mã Khách Hàng Chuẩn", "Bảng Mã Khách Hàng BIZFLY"];
-var WRITE_ALLOWLIST = ["Bảng Mã Khách Hàng Chuẩn", "Activity Log"];
+var WRITE_ALLOWLIST = ["Bảng Mã Khách Hàng Chuẩn", "Bảng Mã Khách Hàng BIZFLY", "Activity Log"];
 
 // Token xác thực ghi đè lấy từ PropertiesService
 function getSharedWriteToken() {
@@ -170,23 +170,25 @@ function doPost(e) {
       }
       
       var rules = body.rules || [];
+      var startRow = (sheetName === "Bảng Mã Khách Hàng BIZFLY") ? 3 : 2;
       
       // Xóa dữ liệu cũ (chừa header)
       var lastRow = sheetRules.getLastRow();
-      if (lastRow > 1) {
-        sheetRules.getRange(2, 1, lastRow - 1, 5).clearContent();
+      var lastCol = sheetRules.getLastColumn() || 5;
+      if (lastRow >= startRow) {
+        sheetRules.getRange(startRow, 1, lastRow - startRow + 1, lastCol).clearContent();
       }
       
       // Ghi dữ liệu mới
       if (rules.length > 0) {
-        sheetRules.getRange(2, 1, rules.length, rules[0].length).setValues(rules);
+        sheetRules.getRange(startRow, 1, rules.length, rules[0].length).setValues(rules);
       }
       
       // Ghi log
       var sheetLogs = ss.getSheetByName("Activity Log");
       if (sheetLogs) {
         var user = body.user || "Unknown User";
-        sheetLogs.appendRow([new Date(), user, "OVERWRITE_RULES", "Đã lưu đè " + rules.length + " bản ghi khách hàng chuẩn trên sheet " + sheetName]);
+        sheetLogs.appendRow([new Date(), user, "OVERWRITE_RULES", "Đã lưu đè " + rules.length + " bản ghi khách hàng trên sheet " + sheetName]);
       }
       
       return createJsonResponse({ status: "success", message: "Rules overwritten successfully" });

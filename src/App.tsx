@@ -41,9 +41,11 @@ import {
 import { 
   pullCustomersFromGoogleSheet, 
   pushCustomersToGoogleSheet, 
+  pushBizflyCustomersToGoogleSheet,
   writeActionLogToSheet,
   DEFAULT_WEB_APP_URL,
-  BizflyCustomer
+  BizflyCustomer,
+  loadSheetsConfig
 } from "./utils/googleSheetsSync";
 import {
   reconcileBizfly,
@@ -718,7 +720,7 @@ export default function App() {
   // Parsing algorithms for uploaded excel sheets
   const handleExcelUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "bank" | "cloud" | "customer" | "bizfly_file1" | "bizfly_file2"
+    type: "bank" | "cloud" | "customer" | "bizfly_file1" | "bizfly_file2" | "bizfly_customer"
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -773,6 +775,37 @@ export default function App() {
           }).catch(err => {
             console.error("Lỗi đồng bộ", err);
             showToast("Đã xảy ra lỗi khi đồng bộ lên Google Sheets.", "error");
+          });
+        } else if (type === "bizfly_customer") {
+          setCustomerFile(file.name);
+          const parsedCustomers = parseBizflyCustomerCodes(rawJson);
+          if (parsedCustomers.length === 0) {
+            showToast("Không tìm thấy dòng dữ liệu bảng mã BIZFLY hợp lệ.", "error");
+            setIsParsingLoading(false);
+            return;
+          }
+          setBizflyCustomers(parsedCustomers);
+          showToast(`Đã cập nhật danh bạ BIZFLY từ file: ${file.name}`, "success");
+          
+          // Tạo mảng ghi đè chuẩn 54 cột cho Google Sheets
+          const formattedRules = parsedCustomers.map(c => {
+            const row = new Array(54).fill("");
+            row[5] = c.soPL;
+            row[7] = c.tenSale;
+            row[9] = c.nhanHang;
+            row[53] = c.customerCode;
+            return row;
+          });
+
+          // Tự động đồng bộ lên Google Sheets
+          const sheetsConfig = loadSheetsConfig();
+          const writeToken = sheetsConfig.writeToken;
+          
+          pushBizflyCustomersToGoogleSheet(formattedRules, DEFAULT_WEB_APP_URL, userEmail, writeToken).then(() => {
+            showToast("Đã đồng bộ lên Google Sheets thành công!", "success");
+          }).catch(err => {
+            console.error("Lỗi đồng bộ BIZFLY:", err);
+            showToast("Lỗi đồng bộ Google Sheets: " + err.message, "error");
           });
         }
       } catch (err: any) {
@@ -989,6 +1022,65 @@ export default function App() {
     }
     setAccountingCustomers(cleaned);
     return cleaned;
+  };
+
+  // Parse Accounting Clients map BIZFLY
+  const parseBizflyCustomerCodes = (rows: any[][]) => {
+    let headerRowIndex = -1;
+    let colIndices = { soPL: -1, tenSale: -1, nhanHang: -1, code: -1 };
+
+    for (let r = 0; r < Math.min(rows.length, 15); r++) {
+      const row = rows[r];
+      if (!row) continue;
+      
+      const codeIdx = row.findIndex(
+        (cell) => cell && (
+          String(cell).toLowerCase().includes("mã khách") || 
+          String(cell).toLowerCase().includes("ma kh") || 
+          String(cell).toLowerCase() === "mã" || 
+          String(cell).toLowerCase() === "ma"
+        )
+      );
+      
+      if (codeIdx !== -1) {
+        headerRowIndex = r;
+        colIndices.code = codeIdx;
+        row.forEach((cell, idx) => {
+          if (!cell) return;
+          const s = String(cell).toLowerCase().trim();
+          if (s.includes("số pl") || s.includes("so pl")) colIndices.soPL = idx;
+          else if (s.includes("tên sale") || s.includes("ten sale") || s.includes("sale")) colIndices.tenSale = idx;
+          else if (s.includes("nhãn hàng") || s.includes("nhan hang") || s.includes("setup") || s.includes("set-up")) colIndices.nhanHang = idx;
+        });
+        break;
+      }
+    }
+
+    if (headerRowIndex === -1) {
+      headerRowIndex = 1;
+      colIndices = { soPL: 5, tenSale: 7, nhanHang: 9, code: 53 };
+    }
+
+    const parsedCustomers: BizflyCustomer[] = [];
+    for (let r = headerRowIndex + 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row || row.length === 0) continue;
+
+      const soPL = colIndices.soPL !== -1 ? String(row[colIndices.soPL] || "").trim() : "";
+      const tenSale = colIndices.tenSale !== -1 ? String(row[colIndices.tenSale] || "").trim() : "";
+      const nhanHang = colIndices.nhanHang !== -1 ? String(row[colIndices.nhanHang] || "").trim() : "";
+      const code = colIndices.code !== -1 ? String(row[colIndices.code] || "").trim() : "";
+
+      if (code || soPL) {
+        parsedCustomers.push({
+          soPL,
+          tenSale,
+          nhanHang,
+          customerCode: code
+        });
+      }
+    }
+    return parsedCustomers;
   };
 
   // 1. Regular Expressions for Extracting Email Identities
@@ -1895,12 +1987,23 @@ export default function App() {
                           />
                         </label>
                       ) : (
-                        <button
-                          onClick={handleSyncFromGoogleSheets}
-                          className="w-full text-center text-[11px] block text-indigo-650 hover:text-indigo-850 font-bold underline cursor-pointer mt-1 bg-white hover:bg-slate-50 py-1.5 border border-slate-200 rounded transition-colors shadow-xs"
-                        >
-                          Tải lại từ Google Sheets 🔄
-                        </button>
+                        <div className="flex flex-col gap-2 w-full">
+                          <label className="text-center text-[11px] block text-indigo-650 hover:text-indigo-850 font-bold underline cursor-pointer mt-1 bg-white hover:bg-slate-50 py-1.5 border border-slate-200 rounded transition-colors shadow-xs">
+                            Cập nhật / Nạp bảng mã mới (.xlsx)
+                            <input
+                              type="file"
+                              accept=".xls,.xlsx"
+                              onChange={(e) => handleExcelUpload(e, "bizfly_customer")}
+                              className="hidden"
+                            />
+                          </label>
+                          <button
+                            onClick={handleSyncFromGoogleSheets}
+                            className="w-full text-center text-[11px] block text-indigo-650 hover:text-indigo-850 font-bold underline cursor-pointer bg-white hover:bg-slate-50 py-1.5 border border-slate-200 rounded transition-colors shadow-xs"
+                          >
+                            Tải lại từ Google Sheets 🔄
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
