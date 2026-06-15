@@ -1105,10 +1105,11 @@ export default function App() {
       const dienGiaiWithEmail = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
       const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, idx);
       const formattedDate = normalizeDate(r.date);
+      const customerCodeForExcel = r.maKhach === "KH_CHUA_PHAN_LOAI" ? "KH020219" : r.maKhach;
 
       wsData.push([
         { v: exportConfig.dvcs, t: "s" },
-        { v: r.maKhach, t: "s" },
+        { v: customerCodeForExcel, t: "s" },
         { v: "", t: "s" },
         r.dienGiai,
         { v: exportConfig.tkNo, t: "s" },
@@ -1118,7 +1119,7 @@ export default function App() {
         exportConfig.maNt,
         parsedTyGia,
         { v: finalTkCo, t: "s" },
-        { v: r.maKhach, t: "s" },
+        { v: customerCodeForExcel, t: "s" },
         r.tien,
         r.tien * parsedTyGia,
         dienGiaiWithEmail,
@@ -2324,6 +2325,7 @@ export default function App() {
                     const dienGiaiWithEmail = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
                     const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, 0);
                     const formattedDate = normalizeDate(r.date);
+                    const customerCodeForExcel = r.maKhach === "KH_CHUA_PHAN_LOAI" ? "KH020219" : r.maKhach;
                     
                     return (
                       <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-xs">
@@ -2356,7 +2358,7 @@ export default function App() {
                           <tbody>
                             <tr className="divide-x divide-slate-200 text-slate-800">
                               <td className="p-2 truncate font-semibold text-slate-500">{exportConfig.dvcs}</td>
-                              <td className="p-2 truncate font-bold">{r.maKhach}</td>
+                              <td className="p-2 truncate font-bold">{customerCodeForExcel}</td>
                               <td className="p-2 italic text-slate-400">— Trống —</td>
                               <td className="p-2 whitespace-normal break-words font-sans text-slate-650" title={r.dienGiai}>{r.dienGiai}</td>
                               <td className="p-2 font-semibold text-slate-600">{exportConfig.tkNo}</td>
@@ -2366,7 +2368,7 @@ export default function App() {
                               <td className="p-2 text-center">{exportConfig.maNt}</td>
                               <td className="p-2 text-center text-indigo-650">{parsedTyGia}</td>
                               <td className="p-2 font-semibold text-slate-600">{finalTkCo}</td>
-                              <td className="p-2 truncate">{r.maKhach}</td>
+                              <td className="p-2 truncate">{customerCodeForExcel}</td>
                               <td className="p-2 text-right font-bold">{formatVND(r.tien)}</td>
                               <td className="p-2 text-right font-extrabold text-blue-700">{formatVND(r.tien * parsedTyGia)}</td>
                               <td className="p-2 whitespace-normal break-words font-sans text-slate-450 italic" title={dienGiaiWithEmail}>{dienGiaiWithEmail}</td>

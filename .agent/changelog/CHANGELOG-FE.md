@@ -8,6 +8,12 @@
 
 ## 2026-06-15
 
+### feat: Tự động gán mã KH020219 cho khách chưa phân loại khi xuất Excel
+- Tự động đổi mã khách từ `KH_CHUA_PHAN_LOAI` sang `KH020219` trong tệp Excel Giấy Báo Có tải về và trong bảng Preview.
+- Giữ nguyên hiển thị mã `KH_CHUA_PHAN_LOAI` trên màn hình UI để kế toán viên dễ dàng theo dõi.
+- Không tự động gán mã khách này khi xuất file bổ sung qua nút "Xuất KH Chưa Khớp" (giữ nguyên để trống `""`).
+- **Files:** `src/App.tsx`
+
 ### feat: Cập nhật mẫu xuất Excel Giấy Báo Có 21 cột và modal cấu hình
 - **Giao diện Modal cấu hình mới:** Thiết kế modal rộng, có chia nhóm trường thông tin (Thông tin chứng từ, Tài khoản, Tiền tệ, Mã phân tích), hỗ trợ cuộn và hiển thị thông báo lỗi trực quan màu đỏ.
 - **Dòng Preview xem trước:** Tích hợp bảng "Xem trước dòng hạch toán đầu tiên (Excel Row 2 Preview)" ở cuối modal để người dùng kiểm tra các giá trị cột trước khi tải xuống.

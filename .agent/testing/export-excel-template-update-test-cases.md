@@ -33,6 +33,9 @@
 | RG-01 | Lọc danh sách giao dịch còn 3 dòng, sau đó xuất Excel | Tệp Excel tải xuống chỉ chứa đúng 3 dòng giao dịch được lọc (đồng bộ với `filteredRows`). |
 | RG-02 | Giao dịch có email đối chiếu (ví dụ: diễn giải gốc `Nộp tiền cloud`, email đối chiếu `hungxd@vcc.vn`) | Cột 4 (Lý do nộp) hiển thị `Nộp tiền cloud` (diễn giải gốc), cột 15 (Diễn giải) hiển thị `Nộp tiền cloud (hungxd@vcc.vn)`. |
 | RG-03 | Giao dịch không có email đối chiếu (ví dụ: diễn giải gốc `Nộp tiền cloud`, email đối chiếu trống) | Cột 4 và Cột 15 đều hiển thị diễn giải gốc `Nộp tiền cloud`. |
+| RG-04 | Dòng hạch toán chưa phân loại (`KH_CHUA_PHAN_LOAI`) trên UI | Trên giao diện chính vẫn hiển thị nhãn màu hổ phách `KH_CHUA_PHAN_LOAI`. |
+| RG-05 | Xuất Excel có chứa dòng `KH_CHUA_PHAN_LOAI` | Dòng xem trước (Excel Row 2 Preview) và File Excel tải về có mã khách hàng tại Cột 2 (Mã khách) và Cột 12 (Mã khách ct) tự động gán là `KH020219`. |
+| RG-06 | Nhấn nút "Xuất KH Chưa Khớp" (`handleExportUnclassifiedXlsx`) | File Excel tải về của danh sách KH chưa khớp có cột Mã khách để trống `""`, không bị gán mã `KH020219`. |
 
 ## 5. Negative Cases
 
