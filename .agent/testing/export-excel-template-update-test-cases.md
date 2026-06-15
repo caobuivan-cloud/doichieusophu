@@ -31,8 +31,8 @@
 | ID | Bước kiểm thử | Kết quả mong đợi |
 |----|----------------|------------------|
 | RG-01 | Lọc danh sách giao dịch còn 3 dòng, sau đó xuất Excel | Tệp Excel tải xuống chỉ chứa đúng 3 dòng giao dịch được lọc (đồng bộ với `filteredRows`). |
-| RG-02 | Giao dịch có email trong ngoặc đơn ở cột diễn giải (ví dụ: `Nộp tiền cloud (hungxd@vcc.vn)`) | Cột 4 (Lý do nộp) hiển thị `Nộp tiền cloud`, cột 15 (Diễn giải) hiển thị diễn giải gốc ban đầu. |
-| RG-03 | Giao dịch có email tự do ở cột diễn giải (ví dụ: `hungxd@vcc.vn nộp tiền`) | Cột 4 và Cột 15 đều giữ nguyên email vì email nằm ngoài ngoặc đơn. |
+| RG-02 | Giao dịch có email đối chiếu (ví dụ: diễn giải gốc `Nộp tiền cloud`, email đối chiếu `hungxd@vcc.vn`) | Cột 4 (Lý do nộp) hiển thị `Nộp tiền cloud` (diễn giải gốc), cột 15 (Diễn giải) hiển thị `Nộp tiền cloud (hungxd@vcc.vn)`. |
+| RG-03 | Giao dịch không có email đối chiếu (ví dụ: diễn giải gốc `Nộp tiền cloud`, email đối chiếu trống) | Cột 4 và Cột 15 đều hiển thị diễn giải gốc `Nộp tiền cloud`. |
 
 ## 5. Negative Cases
 

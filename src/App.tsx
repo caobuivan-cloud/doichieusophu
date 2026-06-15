@@ -1102,7 +1102,7 @@ export default function App() {
       const finalTkCo = manualRows[r.id]?.tkCo || exportConfig.tkCo;
       const finalVuViec = manualRows[r.id]?.vuViec || exportConfig.vuViec;
       const finalBoPhan = manualRows[r.id]?.boPhan || exportConfig.boPhan;
-      const cleanDienGiai = cleanReason(r.dienGiai);
+      const dienGiaiWithEmail = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
       const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, idx);
       const formattedDate = normalizeDate(r.date);
 
@@ -1110,7 +1110,7 @@ export default function App() {
         { v: exportConfig.dvcs, t: "s" },
         { v: r.maKhach, t: "s" },
         { v: "", t: "s" },
-        cleanDienGiai,
+        r.dienGiai,
         { v: exportConfig.tkNo, t: "s" },
         { v: exportConfig.maGd, t: "s" },
         { v: formattedDocNum, t: "s" },
@@ -1121,7 +1121,7 @@ export default function App() {
         { v: r.maKhach, t: "s" },
         r.tien,
         r.tien * parsedTyGia,
-        r.dienGiai,
+        dienGiaiWithEmail,
         { v: finalVuViec, t: "s" },
         { v: finalBoPhan, t: "s" },
         { v: r.hopDong || "", t: "s" },
@@ -2321,7 +2321,7 @@ export default function App() {
                     const finalTkCo = manualRows[r.id]?.tkCo || exportConfig.tkCo;
                     const finalVuViec = manualRows[r.id]?.vuViec || exportConfig.vuViec;
                     const finalBoPhan = manualRows[r.id]?.boPhan || exportConfig.boPhan;
-                    const cleanDienGiai = cleanReason(r.dienGiai);
+                    const dienGiaiWithEmail = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
                     const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, 0);
                     const formattedDate = normalizeDate(r.date);
                     
@@ -2358,7 +2358,7 @@ export default function App() {
                               <td className="p-2 truncate font-semibold text-slate-500">{exportConfig.dvcs}</td>
                               <td className="p-2 truncate font-bold">{r.maKhach}</td>
                               <td className="p-2 italic text-slate-400">— Trống —</td>
-                              <td className="p-2 whitespace-normal break-words font-sans text-slate-650" title={cleanDienGiai}>{cleanDienGiai}</td>
+                              <td className="p-2 whitespace-normal break-words font-sans text-slate-650" title={r.dienGiai}>{r.dienGiai}</td>
                               <td className="p-2 font-semibold text-slate-600">{exportConfig.tkNo}</td>
                               <td className="p-2 text-center text-slate-500">{exportConfig.maGd}</td>
                               <td className="p-2 font-bold text-indigo-700">{formattedDocNum || <span className="text-red-500">Chờ nhập...</span>}</td>
@@ -2369,7 +2369,7 @@ export default function App() {
                               <td className="p-2 truncate">{r.maKhach}</td>
                               <td className="p-2 text-right font-bold">{formatVND(r.tien)}</td>
                               <td className="p-2 text-right font-extrabold text-blue-700">{formatVND(r.tien * parsedTyGia)}</td>
-                              <td className="p-2 whitespace-normal break-words font-sans text-slate-450 italic" title={r.dienGiai}>{r.dienGiai}</td>
+                              <td className="p-2 whitespace-normal break-words font-sans text-slate-450 italic" title={dienGiaiWithEmail}>{dienGiaiWithEmail}</td>
                               <td className="p-2 truncate">{finalVuViec}</td>
                               <td className="p-2 truncate">{finalBoPhan}</td>
                               <td className="p-2 truncate">{r.hopDong || <span className="text-slate-350 font-sans italic">Trống</span>}</td>
