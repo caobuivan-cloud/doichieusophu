@@ -1,13 +1,39 @@
 function setupSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // Setup Bảng Mã sheet
+  // Setup Bảng Mã sheet (Cloud)
   var sheetRules = ss.getSheetByName("Bảng Mã Khách Hàng Chuẩn");
   if (!sheetRules) {
     sheetRules = ss.insertSheet("Bảng Mã Khách Hàng Chuẩn");
     sheetRules.appendRow(["Mã KH", "Email", "Tên Công Ty", "MST", "Địa Chỉ"]);
     sheetRules.getRange("A1:E1").setFontWeight("bold");
     sheetRules.setFrozenRows(1);
+  }
+
+  // Setup Bảng Mã sheet BIZFLY (Read-Only)
+  var sheetBizfly = ss.getSheetByName("Bảng Mã Khách Hàng BIZFLY");
+  if (!sheetBizfly) {
+    sheetBizfly = ss.insertSheet("Bảng Mã Khách Hàng BIZFLY");
+    // Tạo dòng header tại dòng 2
+    sheetBizfly.appendRow([]); // Dòng 1 trống
+    
+    // Ghi tiêu đề vào dòng 2 tại các cột tương ứng để giữ layout Excel
+    // F (cột 6): Số PL
+    // H (cột 8): Tên sale
+    // J (cột 10): Nhãn hàng/TK setup
+    // BB (cột 54): Mã khách
+    sheetBizfly.getRange("F2").setValue("Số PL");
+    sheetBizfly.getRange("H2").setValue("Tên sale");
+    sheetBizfly.getRange("J2").setValue("Nhãn hàng/TK set-up dv");
+    sheetBizfly.getRange("BB2").setValue("Mã khách");
+    sheetBizfly.getRange("A2:BB2").setFontWeight("bold");
+    sheetBizfly.setFrozenRows(2);
+    
+    // Ghi log cảnh báo sheet BIZFLY trống vừa tạo
+    var sheetLogs = ss.getSheetByName("Activity Log");
+    if (sheetLogs) {
+      sheetLogs.appendRow([new Date(), "System", "WARNING", "Sheet Bảng Mã Khách Hàng BIZFLY mới được tự động tạo và hiện chưa có dữ liệu đối soát."]);
+    }
   }
   
   // Setup Log sheet
@@ -20,23 +46,76 @@ function setupSheets() {
   }
 }
 
+// Cấu hình Allowlist tách biệt Read/Write để bảo vệ an toàn dữ liệu
+var READ_ALLOWLIST = ["Bảng Mã Khách Hàng Chuẩn", "Bảng Mã Khách Hàng BIZFLY"];
+var WRITE_ALLOWLIST = ["Bảng Mã Khách Hàng Chuẩn", "Activity Log"];
+
+// Token xác thực ghi đè lấy từ PropertiesService
+function getSharedWriteToken() {
+  return PropertiesService.getScriptProperties().getProperty("SHARED_WRITE_TOKEN") || "default_token_please_change";
+}
+
 function doGet(e) {
   var action = e.parameter.action;
+  var sheetName = e.parameter.sheetName || "Bảng Mã Khách Hàng Chuẩn";
   
   if (action === "get_rules") {
+    // Kiểm tra sheetName có thuộc danh sách cho phép đọc hay không
+    if (READ_ALLOWLIST.indexOf(sheetName) === -1) {
+      return createJsonResponse({ status: "error", message: "Quyền đọc bị từ chối đối với sheet: " + sheetName });
+    }
+    
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName("Bảng Mã Khách Hàng Chuẩn");
+    var sheet = ss.getSheetByName(sheetName);
     if (!sheet) {
-      return createJsonResponse({ status: "error", message: "Không tìm thấy sheet Bảng Mã Khách Hàng Chuẩn" });
+      // Nếu là BIZFLY và sheet chưa có, chạy setup và trả thành công nhưng cảnh báo rỗng
+      if (sheetName === "Bảng Mã Khách Hàng BIZFLY") {
+        setupSheets();
+        return createJsonResponse({ 
+          status: "success", 
+          data: [], 
+          warning: "Sheet Bảng Mã Khách Hàng BIZFLY mới được khởi tạo và chưa có dữ liệu. Vui lòng cập nhật trên Google Sheets." 
+        });
+      }
+      return createJsonResponse({ status: "error", message: "Không tìm thấy sheet: " + sheetName });
     }
     
     var data = sheet.getDataRange().getValues();
-    if (data.length <= 1) {
-      return createJsonResponse({ status: "success", data: [] });
+    
+    // Xử lý Cloud
+    if (sheetName === "Bảng Mã Khách Hàng Chuẩn") {
+      if (data.length <= 1) {
+        return createJsonResponse({ status: "success", data: [] });
+      }
+      var rulesData = data.slice(1); // Loại bỏ 1 dòng header ở server
+      return createJsonResponse({ status: "success", data: rulesData });
     }
     
-    var rulesData = data.slice(1); // Bỏ qua dòng header
-    return createJsonResponse({ status: "success", data: rulesData });
+    // Xử lý BIZFLY
+    if (sheetName === "Bảng Mã Khách Hàng BIZFLY") {
+      if (data.length <= 2) {
+        return createJsonResponse({ 
+          status: "success", 
+          data: [], 
+          warning: "Bảng mã BIZFLY không có dữ liệu thật (chỉ chứa header)." 
+        });
+      }
+      
+      // Loại bỏ 2 dòng header trên server (data.slice(2))
+      var rawRows = data.slice(2);
+      
+      // Tối ưu hóa: Trích xuất chỉ 4 cột cần thiết F(5), H(7), J(9), BB(53)
+      // RAW_SHEET_COLUMN_MAP: F=5, H=7, J=9, BB=53
+      var projectedData = rawRows.map(function(row) {
+        var soPL = row[5] ? String(row[5]).trim() : "";
+        var tenSale = row[7] ? String(row[7]).trim() : "";
+        var nhanHang = row[9] ? String(row[9]).trim() : "";
+        var maKhach = row[53] ? String(row[53]).trim() : "";
+        return [soPL, tenSale, nhanHang, maKhach]; // Trả về mảng 4 cột projected
+      });
+      
+      return createJsonResponse({ status: "success", data: projectedData });
+    }
   }
   
   return createJsonResponse({ status: "error", message: "Invalid action" });
@@ -46,8 +125,10 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     var action = body.action;
+    var sheetName = body.sheetName || "Bảng Mã Khách Hàng Chuẩn";
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     
+    // Action append log (append-only): không yêu cầu check token để tránh mất log
     if (action === "log") {
       var sheetLogs = ss.getSheetByName("Activity Log");
       if (!sheetLogs) {
@@ -60,16 +141,32 @@ function doPost(e) {
       var actionName = body.actionName || "";
       var actionDetails = body.actionDetails || "";
       
-      sheetLogs.appendRow([timestamp, user, actionName, actionDetails]);
+      // Giới hạn độ dài text log để chống spam
+      if (actionDetails.length > 2000) {
+        actionDetails = actionDetails.substring(0, 2000) + "... (bị cắt ngắn)";
+      }
       
+      sheetLogs.appendRow([timestamp, user, actionName, actionDetails]);
       return createJsonResponse({ status: "success", message: "Log saved" });
     }
     
+    // Action overwrite (ghi đè): bắt buộc kiểm tra token và check allowlist
     if (action === "overwrite_rules") {
-      var sheetRules = ss.getSheetByName("Bảng Mã Khách Hàng Chuẩn");
+      if (WRITE_ALLOWLIST.indexOf(sheetName) === -1) {
+        return createJsonResponse({ status: "error", message: "Quyền ghi bị từ chối đối với sheet: " + sheetName });
+      }
+      
+      // Xác thực token ghi đè bảo vệ dữ liệu
+      var clientToken = body.token || "";
+      var serverToken = getSharedWriteToken();
+      if (clientToken !== serverToken) {
+        return createJsonResponse({ status: "error", message: "Token xác thực ghi đè không hợp lệ!" });
+      }
+      
+      var sheetRules = ss.getSheetByName(sheetName);
       if (!sheetRules) {
         setupSheets();
-        sheetRules = ss.getSheetByName("Bảng Mã Khách Hàng Chuẩn");
+        sheetRules = ss.getSheetByName(sheetName);
       }
       
       var rules = body.rules || [];
@@ -85,11 +182,11 @@ function doPost(e) {
         sheetRules.getRange(2, 1, rules.length, rules[0].length).setValues(rules);
       }
       
-      // Ghi log hành động overwrite này luôn để theo dõi
+      // Ghi log
       var sheetLogs = ss.getSheetByName("Activity Log");
       if (sheetLogs) {
         var user = body.user || "Unknown User";
-        sheetLogs.appendRow([new Date(), user, "OVERWRITE_RULES", "Đã lưu đè " + rules.length + " bản ghi khách hàng chuẩn."]);
+        sheetLogs.appendRow([new Date(), user, "OVERWRITE_RULES", "Đã lưu đè " + rules.length + " bản ghi khách hàng chuẩn trên sheet " + sheetName]);
       }
       
       return createJsonResponse({ status: "success", message: "Rules overwritten successfully" });
@@ -106,16 +203,3 @@ function createJsonResponse(responseObject) {
   return ContentService.createTextOutput(JSON.stringify(responseObject))
     .setMimeType(ContentService.MimeType.JSON);
 }
-
-/**
- * HƯỚNG DẪN SỬ DỤNG (Dành cho Dev/Người dùng cuối):
- * 1. Mở Google Sheets mới.
- * 2. Vào Extensions (Tiện ích mở rộng) -> Apps Script (Tập lệnh).
- * 3. Dán toàn bộ đoạn code này vào file Code.gs.
- * 4. Chạy hàm `setupSheets` 1 lần (cấp quyền khi được hỏi) để tạo 2 sheet cơ bản.
- * 5. Bấm Deploy (Triển khai) -> New deployment (Triển khai mới).
- * 6. Chọn "Web app". 
- *    - Execute as (Thực thi dưới dạng): "Me" (Tôi).
- *    - Who has access (Ai có quyền truy cập): "Anyone" (Bất kỳ ai).
- * 7. Bấm Deploy, copy dòng "Web app URL" và đưa lại vào cấu hình hệ thống Đối Chiếu Sổ Phụ.
- */

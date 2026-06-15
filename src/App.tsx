@@ -42,8 +42,14 @@ import {
   pullCustomersFromGoogleSheet, 
   pushCustomersToGoogleSheet, 
   writeActionLogToSheet,
-  DEFAULT_WEB_APP_URL 
+  DEFAULT_WEB_APP_URL,
+  BizflyCustomer
 } from "./utils/googleSheetsSync";
+import {
+  reconcileBizfly,
+  BizflyReconciliationRow,
+  normalizeCompareKey
+} from "./utils/bizflyReconciliation";
 import { getPortalUserEmail } from "./utils/portalAuth";
 import {
   normalizeDate,
@@ -80,11 +86,13 @@ interface ProcessedRow {
 const CustomerCodeEditor = ({
   row,
   accountingCustomers,
-  handleCellEdit
+  handleCellEdit,
+  mode
 }: {
   row: ProcessedRow;
-  accountingCustomers: AccountingCustomer[];
+  accountingCustomers: any[];
   handleCellEdit: (id: string, field: keyof ProcessedRow, val: any) => void;
+  mode: "cloud" | "bizfly";
 }) => {
   const [val, setVal] = useState(row.maKhach);
 
@@ -92,12 +100,24 @@ const CustomerCodeEditor = ({
     const code = e.target.value;
     setVal(code);
 
-    const corresponding = accountingCustomers.find((c) => c.customerCode === code);
-    if (corresponding) {
-      handleCellEdit(row.id, "maKhach", code);
-      handleCellEdit(row.id, "tenKhach", corresponding.companyName);
-      if (corresponding.email) {
-        handleCellEdit(row.id, "resolvedEmail", corresponding.email);
+    if (mode === "cloud") {
+      const corresponding = (accountingCustomers as AccountingCustomer[]).find((c) => c.customerCode === code);
+      if (corresponding) {
+        handleCellEdit(row.id, "maKhach", code);
+        handleCellEdit(row.id, "tenKhach", corresponding.companyName);
+        if (corresponding.email) {
+          handleCellEdit(row.id, "resolvedEmail", corresponding.email);
+        }
+      }
+    } else {
+      const corresponding = (accountingCustomers as BizflyCustomer[]).find((c) => c.customerCode === code);
+      if (corresponding) {
+        handleCellEdit(row.id, "maKhach", code);
+        handleCellEdit(row.id, "tenKhach", corresponding.tenSale ? `${corresponding.tenSale} (${corresponding.nhanHang})` : "Khách hàng BIZFLY");
+        handleCellEdit(row.id, "hopDong", corresponding.soPL);
+        // Lưu các thuộc tính đặc thù BIZFLY để hạch toán diễn giải
+        handleCellEdit(row.id, "bizflyTenSale" as any, corresponding.tenSale);
+        handleCellEdit(row.id, "bizflyNhanHang" as any, corresponding.nhanHang);
       }
     }
   };
@@ -123,13 +143,161 @@ const CustomerCodeEditor = ({
   );
 };
 
+/* Virtual scrolling table for rendering 10k BIZFLY customer records smoothly */
+const VirtualCustomerTable = ({
+  customers,
+  editingCustomerCode,
+  editCustData,
+  setEditingCustomerCode,
+  setEditCustData,
+  handleSaveCustomerEdit,
+  handleStartEditingCustomer,
+  handleDeleteCustomer,
+}: {
+  customers: BizflyCustomer[];
+  editingCustomerCode: string | null;
+  editCustData: Partial<BizflyCustomer>;
+  setEditingCustomerCode: (val: string | null) => void;
+  setEditCustData: (val: Partial<BizflyCustomer>) => void;
+  handleSaveCustomerEdit: (code: string) => void;
+  handleStartEditingCustomer: (cust: any) => void;
+  handleDeleteCustomer: (code: string) => void;
+}) => {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = React.useState(0);
+  
+  const itemHeight = 44; // Chiều cao mỗi hàng (px)
+  const containerHeight = 500; // Chiều cao khung hiển thị (px)
+  const totalItems = customers.length;
+  const totalHeight = totalItems * itemHeight;
+  
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  };
+  
+  const buffer = 5;
+  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - buffer);
+  const endIndex = Math.min(totalItems - 1, Math.floor((scrollTop + containerHeight) / itemHeight) + buffer);
+  
+  const visibleCustomers = React.useMemo(() => {
+    return customers.slice(startIndex, endIndex + 1).map((cust, idx) => ({
+      cust,
+      absoluteIndex: startIndex + idx,
+    }));
+  }, [customers, startIndex, endIndex]);
+
+  return (
+    <div className="flex flex-col border border-slate-200 rounded overflow-hidden shadow-xs">
+      {/* Table Header */}
+      <div className="flex bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider py-3 px-3">
+        <div className="w-12 text-center shrink-0">STT</div>
+        <div className="w-32 shrink-0">Số PL</div>
+        <div className="w-32 shrink-0">Tên Sale</div>
+        <div className="flex-1 truncate">Nhãn hàng / TK setup</div>
+        <div className="w-48 shrink-0">Mã Khách</div>
+        <div className="w-24 text-center shrink-0">Thao tác</div>
+      </div>
+      
+      {/* Scrollable Container */}
+      <div 
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="overflow-y-auto relative bg-white"
+        style={{ height: `${containerHeight}px` }}
+      >
+        {customers.length === 0 ? (
+          <div className="absolute inset-0 flex items-center justify-center text-slate-400 bg-slate-50 font-medium">
+            Không tìm thấy bản ghi khách hàng nào phù hợp bộ lọc tìm kiếm.
+          </div>
+        ) : (
+          <div style={{ height: `${totalHeight}px`, position: "relative" }}>
+            <div 
+              className="absolute left-0 right-0 top-0 divide-y divide-slate-100"
+              style={{ transform: `translateY(${startIndex * itemHeight}px)` }}
+            >
+              {visibleCustomers.map(({ cust, absoluteIndex }) => {
+                const isCustEditing = editingCustomerCode === cust.customerCode;
+                
+                return (
+                  <div 
+                    key={cust.customerCode + "-" + cust.soPL + "-" + absoluteIndex} 
+                    className="flex hover:bg-slate-50/50 transition-colors items-center text-xs text-slate-700 px-3"
+                    style={{ height: `${itemHeight}px` }}
+                  >
+                    {/* STT */}
+                    <div className="w-12 text-center shrink-0 font-mono text-slate-400">
+                      {absoluteIndex + 1}
+                    </div>
+                    
+                    {/* Số PL */}
+                    <div className="w-32 shrink-0 font-semibold font-mono text-slate-900 truncate pr-2" title={cust.soPL}>
+                      {cust.soPL || "—"}
+                    </div>
+                    
+                    {/* Tên Sale */}
+                    <div className="w-32 shrink-0 font-medium text-slate-800 pr-2 truncate" title={cust.tenSale}>
+                      {cust.tenSale || "—"}
+                    </div>
+                    
+                    {/* Nhãn hàng */}
+                    <div className="flex-1 truncate font-medium text-slate-600 pr-2" title={cust.nhanHang}>
+                      {cust.nhanHang || "—"}
+                    </div>
+                    
+                    {/* Mã khách */}
+                    <div className="w-48 shrink-0 font-semibold font-mono text-slate-900 truncate pr-2">
+                      {cust.customerCode}
+                    </div>
+                    
+                    {/* Thao tác */}
+                    <div className="w-24 shrink-0 text-center font-bold text-slate-400 italic text-[10px]">
+                      Read-only
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
+  const [mode, setMode] = useState<"cloud" | "bizfly">("cloud");
+
+  // Migration dữ liệu cũ an toàn (Task 2.2)
+  React.useEffect(() => {
+    try {
+      const oldSaved = localStorage.getItem("accounting_customers");
+      if (oldSaved && !localStorage.getItem("accounting_customers_cloud")) {
+        localStorage.setItem("accounting_customers_cloud", oldSaved);
+        if (localStorage.getItem("accounting_customers_cloud") === oldSaved) {
+          localStorage.removeItem("accounting_customers");
+          console.log("LocalStorage accounting_customers migrated successfully");
+        }
+      }
+    } catch (e) {
+      console.error("Migration error:", e);
+    }
+  }, []);
+
   // Main states for holding active accounting tables
   const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>([]);
   const [cloudRecords, setCloudRecords] = useState<CloudRecord[]>([]);
-  const [accountingCustomers, setAccountingCustomers] = useState<AccountingCustomer[]>(() => {
+
+  // States for BIZFLY files
+  const [bizflyFile1, setBizflyFile1] = useState<string>("");
+  const [bizflyFile2, setBizflyFile2] = useState<string>("");
+  const [bizflyFile1Rows, setBizflyFile1Rows] = useState<any[][]>([]);
+  const [bizflyFile2Rows, setBizflyFile2Rows] = useState<any[][]>([]);
+  const [isParsingLoading, setIsParsingLoading] = useState<boolean>(false);
+
+  // Tách biệt states cho Cloud và BIZFLY (Task 2.3)
+  const [cloudCustomers, setCloudCustomers] = useState<AccountingCustomer[]>(() => {
     try {
-      const saved = localStorage.getItem("accounting_customers");
+      const saved = localStorage.getItem("accounting_customers_cloud");
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -137,19 +305,57 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.error("Error loading accounting_customers from localStorage:", e);
+      console.error("Error loading cloud customers:", e);
     }
     return sampleAccountingCodes;
   });
 
-  // Keep track of any changes to save back to localStorage
+  const [bizflyCustomers, setBizflyCustomers] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem("accounting_customers_bizfly");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error("Error loading bizfly customers:", e);
+    }
+    return [];
+  });
+
+  // Resolve dynamic customer state dựa trên mode để giữ khả năng tương thích ngược
+  const accountingCustomers = useMemo(() => {
+    return mode === "cloud" ? cloudCustomers : bizflyCustomers;
+  }, [mode, cloudCustomers, bizflyCustomers]);
+
+  const setAccountingCustomers = (data: any) => {
+    if (mode === "cloud") {
+      setCloudCustomers(data);
+    } else {
+      setBizflyCustomers(data);
+    }
+  };
+
+  // Cache cloud
   React.useEffect(() => {
     try {
-      localStorage.setItem("accounting_customers", JSON.stringify(accountingCustomers));
+      localStorage.setItem("accounting_customers_cloud", JSON.stringify(cloudCustomers));
     } catch (e) {
-      console.error("Error saving accounting_customers to localStorage:", e);
+      console.error("Error saving cloud customers to localStorage:", e);
     }
-  }, [accountingCustomers]);
+  }, [cloudCustomers]);
+
+  // Cache BIZFLY có try/catch quota fallback (Task 2.4)
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("accounting_customers_bizfly", JSON.stringify(bizflyCustomers));
+    } catch (e) {
+      console.warn("Storage quota exceeded. BIZFLY customer cache fallback to React in-memory state.");
+      // Lỗi quota: chỉ giữ in-memory state, không crash app
+    }
+  }, [bizflyCustomers]);
 
   // Selected file names for visual feedback
   const [bankFile, setBankFile] = useState<string>("");
@@ -231,7 +437,7 @@ export default function App() {
     const webAppUrl = DEFAULT_WEB_APP_URL;
 
     if (autoPull && webAppUrl) {
-      pullCustomersFromGoogleSheet(webAppUrl).then(data => {
+      pullCustomersFromGoogleSheet(webAppUrl, "Bảng Mã Khách Hàng Chuẩn").then(data => {
         if (data && data.length > 0) {
           setAccountingCustomers(data);
           console.log("Auto-pulled", data.length, "customers from Google Sheets");
@@ -274,22 +480,119 @@ export default function App() {
     }
   }, [toast]);
 
+  const handleModeChange = (newMode: "cloud" | "bizfly") => {
+    setMode(newMode);
+    
+    // Reset states workflow (Task 2.5)
+    setBankTransactions([]);
+    setCloudRecords([]);
+    setBankFile("");
+    setCloudFile("");
+    setBizflyFile1("");
+    setBizflyFile2("");
+    setBizflyFile1Rows([]);
+    setBizflyFile2Rows([]);
+    setMatchFilter("all");
+    setSearchQuery("");
+    setSearchCustomerQuery("");
+    setCustomerPage(1);
+    setManualRows({});
+    setIsMatchedRun(false);
+    
+    // Reset exportConfig về giá trị mặc định của từng mode
+    if (newMode === "cloud") {
+      setExportConfig({
+        dvcs: "HANOI",
+        tkNo: "112104",
+        maGd: "2",
+        soCtStart: "",
+        maNt: "VND",
+        tyGia: "1",
+        tkCo: "131",
+        vuViec: "CLOUD",
+        boPhan: "DIG.TRAN",
+        maQuyen: "BC" + new Date().getFullYear()
+      });
+      showToast("Đã chuyển sang phân hệ CLOUD", "success");
+    } else {
+      setExportConfig({
+        dvcs: "HANOI",
+        tkNo: "112106",
+        maGd: "2",
+        soCtStart: "",
+        maNt: "VND",
+        tyGia: "1",
+        tkCo: "131",
+        vuViec: "BIZFLY",
+        boPhan: "DIG.TRAN",
+        maQuyen: "BC" + new Date().getFullYear()
+      });
+      showToast("Đã chuyển sang phân hệ BIZFLY", "success");
+
+      // Tự động tải bảng mã khách hàng BIZFLY từ Google Sheets nếu danh bạ trống
+      if (bizflyCustomers.length === 0) {
+        const webAppUrl = DEFAULT_WEB_APP_URL;
+        if (webAppUrl) {
+          showToast("Đang tải danh bạ BIZFLY từ Google Sheets...", "info");
+          pullCustomersFromGoogleSheet(webAppUrl, "Bảng Mã Khách Hàng BIZFLY").then(data => {
+            if (data && data.length > 0) {
+              setBizflyCustomers(data);
+              showToast(`Đã tải thành công ${data.length} mã khách BIZFLY`, "success");
+            } else {
+              showToast("Bảng mã BIZFLY trống hoặc chưa cấu hình trên Sheets", "info");
+            }
+          }).catch(err => {
+            console.error("Lỗi khi tải bảng mã BIZFLY:", err);
+            showToast("Không thể kết nối đến Google Sheets", "error");
+          });
+        }
+      }
+    }
+  };
+
+  const handleSyncFromGoogleSheets = () => {
+    const webAppUrl = DEFAULT_WEB_APP_URL;
+    if (!webAppUrl) {
+      showToast("Chưa cấu hình URL Web App Google Sheets", "error");
+      return;
+    }
+    const targetSheet = mode === "cloud" ? "Bảng Mã Khách Hàng Chuẩn" : "Bảng Mã Khách Hàng BIZFLY";
+    showToast(`Đang tải dữ liệu từ sheet "${targetSheet}"...`, "info");
+    
+    pullCustomersFromGoogleSheet(webAppUrl, targetSheet).then(data => {
+      if (data && data.length > 0) {
+        setAccountingCustomers(data);
+        showToast(`Đã đồng bộ thành công ${data.length} mã khách từ Google Sheets`, "success");
+        if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+          writeActionLogToSheet(webAppUrl, userEmail, "Đồng Bộ Google Sheets", `Tải thành công ${data.length} mã từ ${targetSheet}`);
+        }
+      } else {
+        showToast("Không tìm thấy dữ liệu hoặc lỗi kết nối Google Sheets", "error");
+      }
+    }).catch(err => {
+      console.error(err);
+      showToast("Lỗi kết nối khi đồng bộ: " + err.message, "error");
+    });
+  };
+
   // Pagination and filtering state for Customer database tab
   const [customerPage, setCustomerPage] = useState(1);
   const itemsPerPage = 15;
 
+  const deferredSearchCustomerQuery = React.useDeferredValue(searchCustomerQuery);
+
   const filteredCustomers = useMemo(() => {
-    const query = searchCustomerQuery.trim().toLowerCase();
+    const query = deferredSearchCustomerQuery.trim().toLowerCase();
     if (!query) return accountingCustomers;
     return accountingCustomers.filter((c) => {
       const codeMatch = c.customerCode?.toLowerCase().includes(query) || false;
-      const nameMatch = c.companyName?.toLowerCase().includes(query) || false;
-      const emailMatch = c.email?.toLowerCase().includes(query) || false;
-      const taxMatch = c.taxCode?.toLowerCase().includes(query) || false;
-      const addressMatch = c.address?.toLowerCase().includes(query) || false;
+      const nameMatch = (c.companyName || c.tenSale || "")?.toLowerCase().includes(query) || false;
+      const emailMatch = (c.email || c.nhanHang || "")?.toLowerCase().includes(query) || false;
+      const taxMatch = (c.taxCode || c.soPL || "")?.toLowerCase().includes(query) || false;
+      const addressMatch = (c.address || "")?.toLowerCase().includes(query) || false;
       return codeMatch || nameMatch || emailMatch || taxMatch || addressMatch;
     });
-  }, [accountingCustomers, searchCustomerQuery]);
+  }, [accountingCustomers, deferredSearchCustomerQuery]);
 
   const totalCustomerPages = Math.ceil(filteredCustomers.length / itemsPerPage) || 1;
 
@@ -415,10 +718,18 @@ export default function App() {
   // Parsing algorithms for uploaded excel sheets
   const handleExcelUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "bank" | "cloud" | "customer"
+    type: "bank" | "cloud" | "customer" | "bizfly_file1" | "bizfly_file2"
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Validate file size (Max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      showToast("Kích thước file vượt quá giới hạn 10MB. Vui lòng rút gọn file.", "error");
+      return;
+    }
+
+    setIsParsingLoading(true);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -431,6 +742,7 @@ export default function App() {
 
         if (rawJson.length === 0) {
           showToast("File Excel trống hoặc không có dòng dữ liệu hợp lệ.", "error");
+          setIsParsingLoading(false);
           return;
         }
 
@@ -442,6 +754,14 @@ export default function App() {
           setCloudFile(file.name);
           parseCloudRecords(rawJson);
           showToast(`Đã nạp thành công file theo dõi Cloud: ${file.name}`, "success");
+        } else if (type === "bizfly_file1") {
+          setBizflyFile1(file.name);
+          setBizflyFile1Rows(rawJson);
+          showToast(`Đã nạp sổ công nợ BIZFLY: ${file.name}`, "success");
+        } else if (type === "bizfly_file2") {
+          setBizflyFile2(file.name);
+          setBizflyFile2Rows(rawJson);
+          showToast(`Đã nạp file HD/PLHD BIZFLY: ${file.name}`, "success");
         } else if (type === "customer") {
           setCustomerFile(file.name);
           const newCustomers = parseCustomerCodes(rawJson);
@@ -458,7 +778,13 @@ export default function App() {
       } catch (err: any) {
         console.error(err);
         showToast(`Đọc file Excel thất bại: ${err.message || err}`, "error");
+      } finally {
+        setIsParsingLoading(false);
       }
+    };
+    reader.onerror = () => {
+      showToast("Đọc file Excel thất bại.", "error");
+      setIsParsingLoading(false);
     };
     reader.readAsBinaryString(file);
   };
@@ -742,6 +1068,92 @@ export default function App() {
 
   // 3. Main processing pipeline generating GIẤY BÁO CÓ
   const processedRows = useMemo<ProcessedRow[]>(() => {
+    if (mode === "bizfly") {
+      if (bizflyFile1Rows.length === 0) return [];
+
+      const reconciled = isMatchedRun
+        ? reconcileBizfly(bizflyFile1Rows, bizflyFile2Rows, bizflyCustomers)
+        : bizflyFile1Rows.slice(Math.max(10, bizflyFile1Rows.findIndex(row => row && row.some(cell => String(cell || "").toLowerCase().includes("diễn giải")))) + 1).map((row, rIdx) => {
+            const dienGiai = String(row[3] || "").trim();
+            const ngayCt = String(row[1] || "").trim();
+            const refNo = String(row[2] || "").trim();
+            const phatSinhCoStr = String(row[6] || "0");
+            const phatSinhCo = parseFloat(phatSinhCoStr.replace(/,/g, ""));
+
+            return {
+              id: `bizfly-pre-${rIdx}`,
+              originalIndex: rIdx,
+              date: ngayCt,
+              referenceNo: refNo,
+              tien: phatSinhCo,
+              dienGiai,
+              soPL: "",
+              tenSale: "",
+              nhanHang: "",
+              maKhach: "KH_CHUA_PHAN_LOAI",
+              matchType: "unmatched" as const,
+              confidence: 0.0,
+              reasoning: "Chờ chạy đối soát hạch toán BIZFLY"
+            };
+          }).filter(r => r.tien > 0 && r.dienGiai);
+
+      return reconciled.map((item) => {
+        const hasManualOverride = manualRows[item.id];
+
+        const computed: ProcessedRow = {
+          id: item.id,
+          originalIndex: item.originalIndex,
+          date: item.date,
+          referenceNo: item.referenceNo,
+          tien: item.tien,
+          dienGiai: item.dienGiai,
+          extractedEmail: null,
+          resolvedEmail: null,
+          cloudDescMatched: false,
+          matchType: item.matchType,
+          confidence: item.confidence,
+          reasoning: item.reasoning,
+
+          tkCo: exportConfig.tkCo,
+          tenTkCo: globalTenTkCo,
+          maKhach: item.maKhach,
+          tenKhach: item.tenSale ? `${item.tenSale} (${item.nhanHang})` : (item.maKhach === "KH020219" ? "Khách hàng Bizfly lẻ" : "Khách hàng Bizfly"),
+          vuViec: exportConfig.vuViec,
+          boPhan: exportConfig.boPhan,
+          hopDong: item.soPL,
+          bangKe: "",
+          td2: "",
+        };
+
+        // Inject BIZFLY specific fields on the record for easy export lookup
+        (computed as any).bizflyNhanHang = item.nhanHang;
+        (computed as any).bizflyTenSale = item.tenSale;
+
+        if (hasManualOverride) {
+          const manualTarget = { ...computed, ...hasManualOverride };
+
+          // Tra cứu động nếu thay đổi mã khách hàng thủ công
+          if (hasManualOverride.maKhach !== undefined && hasManualOverride.tenKhach === undefined) {
+            const matchingCust = bizflyCustomers.find((c) => c.customerCode === hasManualOverride.maKhach);
+            if (matchingCust) {
+              manualTarget.tenKhach = matchingCust.tenSale ? `${matchingCust.tenSale} (${matchingCust.nhanHang})` : "Khách hàng BIZFLY";
+              manualTarget.hopDong = matchingCust.soPL;
+              (manualTarget as any).bizflyNhanHang = matchingCust.nhanHang;
+              (manualTarget as any).bizflyTenSale = matchingCust.tenSale;
+            }
+          }
+
+          return {
+            ...manualTarget,
+            matchType: hasManualOverride.matchType || "manual"
+          };
+        }
+
+        return computed;
+      });
+    }
+
+    // CLOUD MODE
     if (bankTransactions.length === 0) return [];
 
     return bankTransactions.map((bankObj) => {
@@ -801,7 +1213,7 @@ export default function App() {
           const normalizedRes = normalizeEmail(resolvedEmail);
           
           // Exact match on email against customer database
-          matchedCust = accountingCustomers.find(
+          matchedCust = (accountingCustomers as AccountingCustomer[]).find(
             (c) => normalizeEmail(c.email) === normalizedRes
           ) || null;
 
@@ -816,7 +1228,7 @@ export default function App() {
         if (!matchedCust) {
           const cleanBkDesc = cleanCompareText(textDesc);
           
-          for (const cust of accountingCustomers) {
+          for (const cust of (accountingCustomers as AccountingCustomer[])) {
             // First check customer code
             if (cust.customerCode && cust.customerCode.trim()) {
               const cleanCode = cleanCompareText(cust.customerCode);
@@ -892,7 +1304,7 @@ export default function App() {
         // If they edited resolvedEmail manually but did not specify or change maKhach directly,
         // let's run dynamically a lookup in the customer directory for user's convenience!
         if (hasManualOverride.resolvedEmail !== undefined && hasManualOverride.maKhach === undefined) {
-          const matchingCust = accountingCustomers.find(
+          const matchingCust = (accountingCustomers as AccountingCustomer[]).find(
             (c) => normalizeEmail(c.email) === normalizeEmail(hasManualOverride.resolvedEmail || "")
           );
           if (matchingCust) {
@@ -911,7 +1323,7 @@ export default function App() {
 
       return computedRow;
     });
-  }, [bankTransactions, cloudRecords, accountingCustomers, globalTkCo, globalTenTkCo, globalVuViec, globalBoPhan, manualRows, isMatchedRun]);
+    }, [bankTransactions, cloudRecords, accountingCustomers, globalTkCo, globalTenTkCo, globalVuViec, globalBoPhan, manualRows, isMatchedRun, mode, bizflyFile1Rows, bizflyFile2Rows, bizflyCustomers, exportConfig]);
 
   // Execute AI matching call to our server route for the selected or all unmatched entries
   const handleAiDeepMatching = async () => {
@@ -1105,7 +1517,19 @@ export default function App() {
       const finalTkCo = manualRows[r.id]?.tkCo || exportConfig.tkCo;
       const finalVuViec = manualRows[r.id]?.vuViec || exportConfig.vuViec;
       const finalBoPhan = manualRows[r.id]?.boPhan || exportConfig.boPhan;
-      const dienGiaiWithEmail = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
+      
+      let finalDienGiai = r.dienGiai;
+      if (mode === "bizfly") {
+        if (r.matchType !== "unmatched") {
+          const nhanHang = (r as any).bizflyNhanHang || "";
+          const tenSale = (r as any).bizflyTenSale || "";
+          const soPL = r.hopDong || "";
+          finalDienGiai = `${r.dienGiai} ${nhanHang} ${tenSale} ${nhanHang} ${soPL}`.trim().replace(/\s+/g, " ");
+        }
+      } else {
+        finalDienGiai = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
+      }
+
       const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, idx);
       const formattedDate = normalizeDate(r.date);
       const customerCodeForExcel = r.maKhach === "KH_CHUA_PHAN_LOAI" ? "KH020219" : r.maKhach;
@@ -1125,7 +1549,7 @@ export default function App() {
         { v: customerCodeForExcel, t: "s" },
         r.tien,
         r.tien * parsedTyGia,
-        dienGiaiWithEmail,
+        finalDienGiai,
         { v: finalVuViec, t: "s" },
         { v: finalBoPhan, t: "s" },
         { v: r.hopDong || "", t: "s" },
@@ -1181,16 +1605,18 @@ export default function App() {
       { wch: 12 }  // Mã quyển
     ];
 
+    const outputFilename = mode === "bizfly" ? "GIAY_BAO_CO_BIZFLY.xlsx" : "GIAY_BAO_CO_VCCLOUD.xlsx";
     XLSX.utils.book_append_sheet(wb, ws, "GIAY_BAO_CO");
-    XLSX.writeFile(wb, "GIAY_BAO_CO_VCCLOUD.xlsx");
+    XLSX.writeFile(wb, outputFilename);
 
     // Ghi log hoạt động
     if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+      const logPrefix = mode === "bizfly" ? "[BIZFLY] " : "";
       writeActionLogToSheet(
         DEFAULT_WEB_APP_URL,
         userEmail,
-        "Xuất Báo Cáo GBC",
-        `Đã xuất file GIAY_BAO_CO_VCCLOUD.xlsx chứa ${wsData.length - 1} dòng.`
+        `${logPrefix}Xuất Báo Cáo GBC`,
+        `Đã xuất file ${outputFilename} chứa ${wsData.length - 2} dòng.`
       );
     }
   };
@@ -1352,12 +1778,36 @@ export default function App() {
       <main className="flex-1 overflow-y-auto bg-slate-50 flex flex-col">
         {/* Top Header inside Main Area for Status and Actions */}
         <header className="bg-white border-b border-slate-200 sticky top-0 z-40 px-6 py-4 flex items-center justify-between min-h-[80px]">
-           <div className="flex items-center gap-3">
+           <div className="flex items-center gap-4 flex-wrap">
               <h2 className="text-lg font-bold text-slate-800">
                  {activeTab === "reconciliation" && "Đối Chiếu & Hạch Toán Sổ Phụ"}
-                 {activeTab === "customers" && "Bảng Mã Khách Hàng Chuẩn"}
+                 {activeTab === "customers" && (mode === "cloud" ? "Bảng Mã Khách Hàng Chuẩn (Cloud)" : "Bảng Mã Khách Hàng BIZFLY")}
                  {activeTab === "guide" && "Hướng Dẫn Vận Hành Hệ Thống"}
               </h2>
+              
+              {/* Glassmorphic Mode Switcher */}
+              <div className="flex items-center bg-slate-100/80 backdrop-blur-md p-0.5 rounded-lg border border-slate-200/50 shadow-inner">
+                <button
+                  onClick={() => handleModeChange("cloud")}
+                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-1 ${
+                    mode === "cloud"
+                      ? "bg-white text-indigo-650 shadow-sm border border-slate-200/30"
+                      : "text-slate-500 hover:text-slate-850"
+                  }`}
+                >
+                  ☁️ Cloud
+                </button>
+                <button
+                  onClick={() => handleModeChange("bizfly")}
+                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-1 ${
+                    mode === "bizfly"
+                      ? "bg-white text-orange-650 shadow-sm border border-slate-200/30"
+                      : "text-slate-500 hover:text-slate-850"
+                  }`}
+                >
+                  🚀 BIZFLY
+                </button>
+              </div>
            </div>
            
            <div className="flex items-center space-x-4">
@@ -1372,7 +1822,13 @@ export default function App() {
             <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
 
             <div className="flex items-center gap-2">
-              {bankTransactions.length > 0 && (
+              {isParsingLoading && (
+                <div className="flex items-center gap-1.5 px-3 py-2 text-indigo-600 text-xs font-semibold">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Đang xử lý...
+                </div>
+              )}
+              {((mode === "cloud" && bankTransactions.length > 0) || (mode === "bizfly" && bizflyFile1Rows.length > 0)) && (
                 <button
                   id="btn-reset"
                   onClick={handleReset}
@@ -1401,110 +1857,145 @@ export default function App() {
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Input Master</span>
-                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded uppercase">Sẵn chuẩn</span>
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase ${mode === "cloud" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-705"}`}>
+                        {mode === "cloud" ? "Sẵn chuẩn" : "Read-Only"}
+                      </span>
                     </div>
-                    <h3 className="text-sm font-bold text-slate-700">[Bảng mã khách hàng]</h3>
-                    <p className="text-xs text-slate-500 mb-4 mt-1 h-10 overflow-hidden text-ellipsis line-clamp-2">
-                      Danh bạ mã kế toán (.xlsx). Nạp file danh bạ chuẩn từ Excel để cập nhật nhanh toàn bộ danh sách.
+                    <h3 className="text-sm font-bold text-slate-700">
+                      {mode === "cloud" ? "[Bảng mã khách hàng]" : "[Bảng mã khách hàng BIZFLY]"}
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-4 mt-1 h-10 overflow-hidden text-ellipsis line-clamp-2 font-medium">
+                      {mode === "cloud" 
+                        ? "Danh bạ mã kế toán (.xlsx). Nạp file danh bạ chuẩn từ Excel để cập nhật nhanh toàn bộ danh sách."
+                        : "Bảng mã khách hàng BIZFLY được tải tự động và đồng bộ từ Google Sheets. Không hỗ trợ nạp file hoặc đẩy ngược."}
                     </p>
                   </div>
 
                   <div className="mt-2">
-                    <div className="border border-emerald-100 rounded bg-emerald-50/30 p-3 flex flex-col space-y-2">
+                    <div className={`border rounded p-3 flex flex-col space-y-2 ${mode === "cloud" ? "border-emerald-100 bg-emerald-50/30" : "border-amber-100 bg-amber-50/30"}`}>
                       <div className="flex items-center space-x-3">
-                        <div className="p-1.5 bg-white rounded shadow-xs border border-emerald-100">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                        <div className="p-1.5 bg-white rounded shadow-xs border border-slate-100">
+                          <CheckCircle2 className={`w-5 h-5 ${mode === "cloud" ? "text-emerald-500" : "text-amber-500"}`} />
                         </div>
                         <div className="text-xs truncate">
-                          <p className="font-semibold text-emerald-800 truncate" title={customerFile}>{customerFile}</p>
-                          <p className="text-[10px] text-emerald-600 mt-0.5">{accountingCustomers.length} mã khách chuẩn đã nạp</p>
+                          <p className="font-semibold text-slate-800 truncate" title={mode === "cloud" ? customerFile : "Google Sheets Sync"}>
+                            {mode === "cloud" ? customerFile : "Đồng bộ đám mây"}
+                          </p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{accountingCustomers.length} mã khách chuẩn đã nạp</p>
                         </div>
                       </div>
-                      <label className="text-center text-[11px] block text-indigo-650 hover:text-indigo-850 font-bold underline cursor-pointer mt-1 bg-white hover:bg-slate-50 py-1.5 border border-slate-200 rounded transition-colors shadow-xs">
-                        Cập nhật / Nạp bảng mã mới (.xlsx)
+                      {mode === "cloud" ? (
+                        <label className="text-center text-[11px] block text-indigo-650 hover:text-indigo-850 font-bold underline cursor-pointer mt-1 bg-white hover:bg-slate-50 py-1.5 border border-slate-200 rounded transition-colors shadow-xs">
+                          Cập nhật / Nạp bảng mã mới (.xlsx)
+                          <input
+                            type="file"
+                            accept=".xls,.xlsx"
+                            onChange={(e) => handleExcelUpload(e, "customer")}
+                            className="hidden"
+                          />
+                        </label>
+                      ) : (
+                        <button
+                          onClick={handleSyncFromGoogleSheets}
+                          className="w-full text-center text-[11px] block text-indigo-650 hover:text-indigo-850 font-bold underline cursor-pointer mt-1 bg-white hover:bg-slate-50 py-1.5 border border-slate-200 rounded transition-colors shadow-xs"
+                        >
+                          Tải lại từ Google Sheets 🔄
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Form: Add New Customer hoặc Báo cáo Read-Only */}
+                {mode === "cloud" ? (
+                  <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-3">
+                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1">
+                      <Plus className="w-4 h-4 text-emerald-500" />
+                      Thêm Mã Khách Hàng Thủ Công
+                    </h3>
+                    
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mã KH Kế toán *</label>
+                      <input
+                        type="text"
+                        value={newCustCode}
+                        onChange={(e) => setNewCustCode(e.target.value)}
+                        placeholder="e.g. KH_VNDIRECT, VCC_KHACHLE"
+                        className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden uppercase font-semibold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tên Công ty / Pháp nhân *</label>
+                      <input
+                        type="text"
+                        value={newCustName}
+                        onChange={(e) => setNewCustName(e.target.value)}
+                        placeholder="e.g. Công ty Cổ phần Chứng khoán VNDIRECT"
+                        className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Email đối chiếu Match 2 *</label>
+                      <input
+                        type="email"
+                        value={newCustEmail}
+                        onChange={(e) => setNewCustEmail(e.target.value)}
+                        placeholder="e.g. support@vndirect.com.vn"
+                        className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mã số thuế</label>
                         <input
-                          type="file"
-                          accept=".xls,.xlsx"
-                          onChange={(e) => handleExcelUpload(e, "customer")}
-                          className="hidden"
+                          type="text"
+                          value={newCustTax}
+                          onChange={(e) => setNewCustTax(e.target.value)}
+                          placeholder="e.g. 0102030405"
+                          className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
                         />
-                      </label>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Địa chỉ</label>
+                        <input
+                          type="text"
+                          value={newCustAddress}
+                          onChange={(e) => setNewCustAddress(e.target.value)}
+                          placeholder="e.g. Hà Nội, Việt Nam"
+                          className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                        />
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Form: Add New Customer */}
-                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-3">
-                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1">
-                    <Plus className="w-4 h-4 text-emerald-500" />
-                    Thêm Mã Khách Hàng Thủ Công
-                  </h3>
-                  
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mã KH Kế toán *</label>
-                    <input
-                      type="text"
-                      value={newCustCode}
-                      onChange={(e) => setNewCustCode(e.target.value)}
-                      placeholder="e.g. KH_VNDIRECT, VCC_KHACHLE"
-                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden uppercase font-semibold"
-                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomer}
+                      className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Thêm Vào Bảng Danh Bạ
+                    </button>
                   </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tên Công ty / Pháp nhân *</label>
-                    <input
-                      type="text"
-                      value={newCustName}
-                      onChange={(e) => setNewCustName(e.target.value)}
-                      placeholder="e.g. Công ty Cổ phần Chứng khoán VNDIRECT"
-                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-medium"
-                    />
+                ) : (
+                  <div className="bg-orange-50 border border-orange-200 p-5 rounded-lg shadow-sm flex flex-col gap-3">
+                    <h3 className="text-xs font-bold text-orange-850 uppercase tracking-wider border-b border-orange-200 pb-2 flex items-center gap-1 font-semibold">
+                      <AlertCircle className="w-4 h-4 text-orange-650" />
+                      Chế Độ Chỉ Đọc BIZFLY
+                    </h3>
+                    <p className="text-xs text-orange-750 leading-relaxed font-medium">
+                      Bảng mã khách hàng phân hệ BIZFLY có cấu trúc đặc thù 59 cột (Google Sheets) và chứa lượng dữ liệu lớn (~10.000 dòng).
+                    </p>
+                    <ul className="text-[11px] text-orange-800 list-disc list-inside space-y-1 font-medium">
+                      <li>Không hỗ trợ thêm mới thủ công cục bộ.</li>
+                      <li>Quyền chỉnh sửa bị vô hiệu hóa trên ứng dụng.</li>
+                      <li>Các thay đổi cần được thực hiện trực tiếp trên Google Sheets.</li>
+                      <li>Sau khi sửa đổi trên Sheets, hãy bấm nút <strong>"Tải lại từ Google Sheets"</strong> để cập nhật dữ liệu.</li>
+                    </ul>
                   </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Email đối chiếu Match 2 *</label>
-                    <input
-                      type="email"
-                      value={newCustEmail}
-                      onChange={(e) => setNewCustEmail(e.target.value)}
-                      placeholder="e.g. support@vndirect.com.vn"
-                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mã số thuế</label>
-                      <input
-                        type="text"
-                        value={newCustTax}
-                        onChange={(e) => setNewCustTax(e.target.value)}
-                        placeholder="e.g. 0102030405"
-                        className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Địa chỉ</label>
-                      <input
-                        type="text"
-                        value={newCustAddress}
-                        onChange={(e) => setNewCustAddress(e.target.value)}
-                        placeholder="e.g. Hà Nội, Việt Nam"
-                        className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleAddCustomer}
-                    className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Thêm Vào Bảng Danh Bạ
-                  </button>
-                </div>
+                )}
               </div>
 
               {/* Right Column: Search and List View */}
@@ -1544,131 +2035,146 @@ export default function App() {
                 </div>
 
                 {/* Table list */}
-                <div className="overflow-x-auto border border-slate-100 rounded">
-                  <table className="w-full text-left border-collapse table-fixed min-w-[700px]">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                        <th className="w-12 py-2 px-3 text-center">STT</th>
-                        <th className="w-32 py-2 px-3">Mã KH kế toán</th>
-                        <th className="py-2 px-3">Tên Công ty / Pháp nhân</th>
-                        <th className="w-48 py-2 px-3">Email đối chiếu</th>
-                        <th className="w-24 py-2 px-3 text-center">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                      {paginatedCustomers.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-12 text-center text-slate-400 bg-slate-50 font-medium">
-                            Không tìm thấy bản ghi khách hàng nào phù hợp bộ lọc tìm kiếm.
-                          </td>
-                        </tr>
-                      ) : (
-                        paginatedCustomers.map((cust, idx) => {
-                          const isCustEditing = editingCustomerCode === cust.customerCode;
-                          const absoluteStt = (customerPage - 1) * itemsPerPage + idx + 1;
-                          
-                          return (
-                            <tr key={cust.customerCode} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="py-2 px-3 text-center font-mono text-slate-400">{absoluteStt}</td>
-                              
-                              <td className="py-2 px-3 font-semibold font-mono text-slate-900 truncate">
-                                {cust.customerCode}
-                              </td>
-
-                              <td className="py-2 px-3 truncate font-medium text-slate-800" title={cust.companyName}>
-                                {isCustEditing ? (
-                                  <input
-                                    type="text"
-                                    value={editCustData.companyName || ""}
-                                    onChange={(e) => setEditCustData(prev => ({ ...prev, companyName: e.target.value }))}
-                                    className="w-full px-1.5 py-0.5 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-blue-500"
-                                  />
-                                ) : (
-                                  cust.companyName
-                                )}
-                              </td>
-
-                              <td className="py-2 px-3 font-mono text-xs text-blue-700 truncate" title={cust.email}>
-                                {isCustEditing ? (
-                                  <input
-                                    type="text"
-                                    value={editCustData.email || ""}
-                                    onChange={(e) => setEditCustData(prev => ({ ...prev, email: e.target.value }))}
-                                    className="w-full px-1.5 py-0.5 font-mono text-xs border border-slate-300 rounded focus:ring-1 focus:ring-blue-500"
-                                  />
-                                ) : (
-                                  cust.email
-                                )}
-                              </td>
-
-                              <td className="py-2 px-3 text-center">
-                                <div className="flex items-center justify-center gap-2">
-                                  {isCustEditing ? (
-                                    <>
-                                      <button
-                                        onClick={() => handleSaveCustomerEdit(cust.customerCode)}
-                                        className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer"
-                                      >
-                                        Lưu
-                                      </button>
-                                      <button
-                                        onClick={() => setEditingCustomerCode(null)}
-                                        className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded text-[10px] font-bold cursor-pointer"
-                                      >
-                                        Hủy
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={() => handleStartEditingCustomer(cust)}
-                                        className="p-1 hover:bg-blue-50 text-blue-600 rounded cursor-pointer transition-colors"
-                                        title="Chỉnh sửa dòng danh bạ này"
-                                      >
-                                        <Edit2 className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeleteCustomer(cust.customerCode)}
-                                        className="p-1 hover:bg-red-50 text-red-500 rounded cursor-pointer transition-colors"
-                                        title="Xóa mã danh bạ"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
+                {mode === "cloud" ? (
+                  <>
+                    <div className="overflow-x-auto border border-slate-100 rounded">
+                      <table className="w-full text-left border-collapse table-fixed min-w-[700px]">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                            <th className="w-12 py-2 px-3 text-center">STT</th>
+                            <th className="w-32 py-2 px-3">Mã KH kế toán</th>
+                            <th className="py-2 px-3">Tên Công ty / Pháp nhân</th>
+                            <th className="w-48 py-2 px-3">Email đối chiếu</th>
+                            <th className="w-24 py-2 px-3 text-center">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                          {paginatedCustomers.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-12 text-center text-slate-400 bg-slate-50 font-medium">
+                                Không tìm thấy bản ghi khách hàng nào phù hợp bộ lọc tìm kiếm.
                               </td>
                             </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                          ) : (
+                            paginatedCustomers.map((cust, idx) => {
+                              const isCustEditing = editingCustomerCode === cust.customerCode;
+                              const absoluteStt = (customerPage - 1) * itemsPerPage + idx + 1;
+                              
+                              return (
+                                <tr key={cust.customerCode} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="py-2 px-3 text-center font-mono text-slate-400">{absoluteStt}</td>
+                                  
+                                  <td className="py-2 px-3 font-semibold font-mono text-slate-900 truncate">
+                                    {cust.customerCode}
+                                  </td>
 
-                {/* Pagination Controls */}
-                {totalCustomerPages > 1 && (
-                  <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-                    <span className="text-xs text-slate-500">
-                      Hiển thị trang <strong>{customerPage}</strong> / <strong>{totalCustomerPages}</strong> (Tổng cộng {filteredCustomers.length} mã)
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setCustomerPage(prev => Math.max(1, prev - 1))}
-                        disabled={customerPage === 1}
-                        className="px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-600 rounded hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                      >
-                        Trang trước
-                      </button>
-                      <button
-                        onClick={() => setCustomerPage(prev => Math.min(totalCustomerPages, prev + 1))}
-                        disabled={customerPage === totalCustomerPages}
-                        className="px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-600 rounded hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                      >
-                        Trang sau
-                      </button>
+                                  <td className="py-2 px-3 truncate font-medium text-slate-800" title={cust.companyName}>
+                                    {isCustEditing ? (
+                                      <input
+                                        type="text"
+                                        value={editCustData.companyName || ""}
+                                        onChange={(e) => setEditCustData(prev => ({ ...prev, companyName: e.target.value }))}
+                                        className="w-full px-1.5 py-0.5 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-blue-500"
+                                      />
+                                    ) : (
+                                      cust.companyName
+                                    )}
+                                  </td>
+
+                                  <td className="py-2 px-3 font-mono text-xs text-blue-700 truncate" title={cust.email}>
+                                    {isCustEditing ? (
+                                      <input
+                                        type="text"
+                                        value={editCustData.email || ""}
+                                        onChange={(e) => setEditCustData(prev => ({ ...prev, email: e.target.value }))}
+                                        className="w-full px-1.5 py-0.5 font-mono text-xs border border-slate-300 rounded focus:ring-1 focus:ring-blue-500"
+                                      />
+                                    ) : (
+                                      cust.email
+                                    )}
+                                  </td>
+
+                                  <td className="py-2 px-3 text-center">
+                                    <div className="flex items-center justify-center gap-2">
+                                      {isCustEditing ? (
+                                        <>
+                                          <button
+                                            onClick={() => handleSaveCustomerEdit(cust.customerCode)}
+                                            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                          >
+                                            Lưu
+                                          </button>
+                                          <button
+                                            onClick={() => setEditingCustomerCode(null)}
+                                            className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded text-[10px] font-bold cursor-pointer"
+                                          >
+                                            Hủy
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            onClick={() => handleStartEditingCustomer(cust)}
+                                            className="p-1 hover:bg-blue-50 text-blue-600 rounded cursor-pointer transition-colors"
+                                            title="Chỉnh sửa dòng danh bạ này"
+                                          >
+                                            <Edit2 className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteCustomer(cust.customerCode)}
+                                            className="p-1 hover:bg-red-50 text-red-500 rounded cursor-pointer transition-colors"
+                                            title="Xóa mã danh bạ"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>
+
+                    {/* Pagination Controls */}
+                    {totalCustomerPages > 1 && (
+                      <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                        <span className="text-xs text-slate-500">
+                          Hiển thị trang <strong>{customerPage}</strong> / <strong>{totalCustomerPages}</strong> (Tổng cộng {filteredCustomers.length} mã)
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setCustomerPage(prev => Math.max(1, prev - 1))}
+                            disabled={customerPage === 1}
+                            className="px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-600 rounded hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                          >
+                            Trang trước
+                          </button>
+                          <button
+                            onClick={() => setCustomerPage(prev => Math.min(totalCustomerPages, prev + 1))}
+                            disabled={customerPage === totalCustomerPages}
+                            className="px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-600 rounded hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                          >
+                            Trang sau
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <VirtualCustomerTable
+                    customers={filteredCustomers}
+                    editingCustomerCode={editingCustomerCode}
+                    editCustData={editCustData}
+                    setEditingCustomerCode={setEditingCustomerCode}
+                    setEditCustData={setEditCustData}
+                    handleSaveCustomerEdit={handleSaveCustomerEdit}
+                    handleStartEditingCustomer={handleStartEditingCustomer}
+                    handleDeleteCustomer={handleDeleteCustomer}
+                  />
                 )}
               </div>
             </div>
@@ -1679,11 +2185,13 @@ export default function App() {
           <div className="flex flex-col gap-6 animate-fade-in-down">
             {/* Top row with 3 blocks or 2 blocks */}
             <div className="flex flex-col xl:flex-row gap-4">
-              {/* Box 1: Sổ Phụ Ngân Hàng */}
+              {/* Box 1: Sổ Phụ Ngân Hàng hoặc Sổ công nợ BIZFLY */}
               <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm relative flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Bước 1: Sổ phụ</span>
-                  {bankFile ? (
+                  <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+                    {mode === "cloud" ? "Bước 1: Sổ phụ" : "Bước 1: Sổ công nợ"}
+                  </span>
+                  {(mode === "cloud" ? bankFile : bizflyFile1) ? (
                     <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded uppercase">Uploaded</span>
                   ) : (
                     <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold uppercase">Bắt buộc</span>
@@ -1691,62 +2199,94 @@ export default function App() {
                 </div>
                 
                 <div>
-                  {bankFile ? (
+                  {(mode === "cloud" ? bankFile : bizflyFile1) ? (
                     <div className="flex items-center gap-3">
                       <div className="text-xs text-right">
-                        <p className="font-semibold text-slate-700 truncate max-w-[150px]" title={bankFile}>{bankFile}</p>
-                        <p className="text-[10px] text-slate-500">{bankTransactions.length} bút toán</p>
+                        <p className="font-semibold text-slate-700 truncate max-w-[150px]" title={mode === "cloud" ? bankFile : bizflyFile1}>
+                          {mode === "cloud" ? bankFile : bizflyFile1}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {mode === "cloud" ? `${bankTransactions.length} bút toán` : `${bizflyFile1Rows.length} dòng`}
+                        </p>
                       </div>
                       <label className="flex items-center text-center text-[10px] text-blue-600 hover:text-blue-800 font-bold border border-blue-200 hover:bg-white bg-white/80 px-2 py-1 rounded cursor-pointer transition-colors shadow-xs">
                         Đổi file
-                        <input type="file" accept=".xls,.xlsx" onChange={(e) => handleExcelUpload(e, "bank")} className="hidden" />
+                        <input 
+                          type="file" 
+                          accept=".xls,.xlsx" 
+                          onChange={(e) => handleExcelUpload(e, mode === "cloud" ? "bank" : "bizfly_file1")} 
+                          className="hidden" 
+                        />
                       </label>
                     </div>
                   ) : (
                     <label className="flex items-center justify-center border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 rounded py-1.5 px-3 text-center cursor-pointer transition-colors">
                       <Upload className="w-3.5 h-3.5 text-slate-500 mr-1.5" />
                       <span className="text-xs font-semibold text-slate-600">Tải lên</span>
-                      <input type="file" accept=".xls,.xlsx" onChange={(e) => handleExcelUpload(e, "bank")} className="hidden" />
+                      <input 
+                        type="file" 
+                        accept=".xls,.xlsx" 
+                        onChange={(e) => handleExcelUpload(e, mode === "cloud" ? "bank" : "bizfly_file1")} 
+                        className="hidden" 
+                      />
                     </label>
                   )}
                 </div>
               </div>
 
-              {/* Box 2: File Theo Dõi Dịch Vụ Cloud */}
+              {/* Box 2: File Theo Dõi Dịch Vụ Cloud hoặc File HD/PLHD BIZFLY */}
               <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm relative flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Bước 2: File Cloud</span>
-                  {cloudFile ? (
+                  <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+                    {mode === "cloud" ? "Bước 2: File Cloud" : "Bước 2: File HD/PLHD"}
+                  </span>
+                  {(mode === "cloud" ? cloudFile : bizflyFile2) ? (
                     <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded uppercase">Uploaded</span>
                   ) : (
-                    <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold uppercase">Bổ trợ</span>
+                    <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold uppercase">
+                      {mode === "cloud" ? "Bổ trợ" : "Bắt buộc"}
+                    </span>
                   )}
                 </div>
 
                 <div>
-                  {cloudFile ? (
+                  {(mode === "cloud" ? cloudFile : bizflyFile2) ? (
                     <div className="flex items-center gap-3">
                       <div className="text-xs text-right">
-                        <p className="font-semibold text-slate-700 truncate max-w-[150px]" title={cloudFile}>{cloudFile}</p>
-                        <p className="text-[10px] text-slate-500">{cloudRecords.length} dòng</p>
+                        <p className="font-semibold text-slate-700 truncate max-w-[150px]" title={mode === "cloud" ? cloudFile : bizflyFile2}>
+                          {mode === "cloud" ? cloudFile : bizflyFile2}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {mode === "cloud" ? `${cloudRecords.length} dòng` : `${bizflyFile2Rows.length} dòng`}
+                        </p>
                       </div>
                       <label className="flex items-center text-center text-[10px] text-blue-600 hover:text-blue-800 font-bold border border-blue-200 hover:bg-white bg-white/80 px-2 py-1 rounded cursor-pointer transition-colors shadow-xs">
                         Đổi file
-                        <input type="file" accept=".xls,.xlsx" onChange={(e) => handleExcelUpload(e, "cloud")} className="hidden" />
+                        <input 
+                          type="file" 
+                          accept=".xls,.xlsx" 
+                          onChange={(e) => handleExcelUpload(e, mode === "cloud" ? "cloud" : "bizfly_file2")} 
+                          className="hidden" 
+                        />
                       </label>
                     </div>
                   ) : (
                     <label className="flex items-center justify-center border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 rounded py-1.5 px-3 text-center cursor-pointer transition-colors">
                       <Upload className="w-3.5 h-3.5 text-slate-500 mr-1.5" />
                       <span className="text-xs font-semibold text-slate-600">Tải lên</span>
-                      <input type="file" accept=".xls,.xlsx" onChange={(e) => handleExcelUpload(e, "cloud")} className="hidden" />
+                      <input 
+                        type="file" 
+                        accept=".xls,.xlsx" 
+                        onChange={(e) => handleExcelUpload(e, mode === "cloud" ? "cloud" : "bizfly_file2")} 
+                        className="hidden" 
+                      />
                     </label>
                   )}
                 </div>
               </div>
 
               {/* Prominent Operational Match Trigger Banner */}
-              {bankTransactions.length > 0 && (
+              {((mode === "cloud" && bankTransactions.length > 0) || (mode === "bizfly" && bizflyFile1Rows.length > 0)) && (
                 <section id="matching-trigger-banner" className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex-1 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-3 w-full justify-between sm:justify-start">
                     <div className="flex items-center gap-3">
@@ -1792,7 +2332,7 @@ export default function App() {
             </div>
 
             {/* Clean summary metrics bar */}
-            {bankTransactions.length > 0 && (
+            {((mode === "cloud" && bankTransactions.length > 0) || (mode === "bizfly" && bizflyFile1Rows.length > 0)) && (
               <section id="config-metrics-bar" className="bg-slate-900 border border-slate-800 text-white p-3 rounded-lg shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
@@ -1997,6 +2537,7 @@ export default function App() {
                                   row={row}
                                   accountingCustomers={accountingCustomers}
                                   handleCellEdit={handleCellEdit}
+                                  mode={mode}
                                 />
                               ) : (
                                 <span className={`font-semibold font-mono whitespace-normal break-all inline-block max-w-full ${row.maKhach === "KH_CHUA_PHAN_LOAI" ? "text-amber-600 bg-amber-50 px-1 rounded" : "text-slate-900"}`}>
@@ -2113,6 +2654,33 @@ export default function App() {
 
                 <div className="p-3 bg-indigo-50 border border-indigo-150 rounded-md text-[11px] text-indigo-800">
                   ⭐ <strong>Cặp khớp thông minh:</strong> Tự động bóc tách các trường hợp người dùng ghi liền không ký tự đặc biệt, ví dụ <code className="bg-indigo-100 px-1 rounded font-mono">minhle91719gmailcom</code> quy đổi chuẩn về <code className="bg-indigo-100 px-1 rounded font-mono">minhle.91719@gmail.com</code>.
+                </div>
+              </div>
+            </section>
+
+            {/* BIZFLY Guide section */}
+            <section id="bizfly-guide" className="bg-white p-7 rounded-xl border border-slate-200 shadow-xs max-w-4xl mx-auto flex flex-col gap-4 mt-6">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1.5 font-semibold">
+                <Sparkles className="w-4 h-4 text-orange-500" />
+                Hướng dẫn phân hệ BIZFLY (Đặc thù)
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-600">
+                <div className="space-y-2">
+                  <h4 className="font-bold text-slate-800">Quy trình đối soát 4 bước:</h4>
+                  <ol className="list-decimal list-inside space-y-1.5 pl-1 leading-relaxed">
+                    <li>Chuyển chế độ sang <strong className="text-orange-650">BIZFLY</strong> tại thanh tiêu đề phía trên.</li>
+                    <li>Nạp file đầu vào 1: <strong className="text-slate-800">Sổ công nợ</strong> (Excel có header dòng 6, nội dung từ dòng 11).</li>
+                    <li>Nạp file đầu vào 2: <strong className="text-slate-800">Thông tin HD/PLHD</strong> (Excel có header dòng 4, chứa cột BG - Diễn giải link tiền).</li>
+                    <li>Bấm nút <strong className="text-blue-600">Thực hiện</strong> để chạy đối soát tự động thông qua Số PL và tra cứu danh bạ.</li>
+                  </ol>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="font-bold text-slate-800">Lưu ý cấu hình danh bạ & bảo mật:</h4>
+                  <ul className="list-disc list-inside space-y-1.5 pl-1 leading-relaxed">
+                    <li>Danh bạ BIZFLY được lưu tại sheet riêng <code className="bg-slate-100 text-slate-800 px-1 rounded font-mono">Bảng Mã Khách Hàng BIZFLY</code> trên Google Sheets.</li>
+                    <li>Để bảo mật, danh bạ BIZFLY hoạt động ở chế độ **Read-Only** trên ứng dụng (không hỗ trợ lưu ghi đè cục bộ).</li>
+                    <li>Mọi thay đổi danh bạ BIZFLY phải thực hiện trực tiếp trên Google Sheets, sau đó bấm <strong>"Tải lại từ Google Sheets"</strong>.</li>
+                  </ul>
                 </div>
               </div>
             </section>

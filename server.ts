@@ -164,7 +164,7 @@ ${JSON.stringify(formattedMaster, null, 2)}`;
     }
   }
 
-  const port = 3000;
+  const port = parseInt(process.env.PORT || '3000', 10);
   app.listen(port, '0.0.0.0', () => {
     console.log(`[OK] Server listening on port ${port} (env: ${process.env.NODE_ENV || 'development'})`);
   });

@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   AUTO_PULL: "google_sheets_sync_auto_pull",
   AUTO_PUSH: "google_sheets_sync_auto_push",
   LOGS_ENABLED: "google_sheets_sync_logs",
+  WRITE_TOKEN: "google_sheets_write_token", // Token bảo vệ ghi đè
 };
 
 export interface SheetsConfig {
@@ -16,6 +17,14 @@ export interface SheetsConfig {
   autoPull: boolean;
   autoPush: boolean;
   logsEnabled: boolean;
+  writeToken: string;
+}
+
+export interface BizflyCustomer {
+  soPL: string;         // Cột F (index 0 trong projected API)
+  tenSale: string;      // Cột H (index 1 trong projected API)
+  nhanHang: string;     // Cột J (index 2 trong projected API)
+  customerCode: string; // Cột BB (index 3 trong projected API)
 }
 
 export const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxLAZsFPx1Cu9gWxulT8whbdfS9dQ4Ga0q-0BLexarbR4WrEmOnHHBk2QTa3FqowmYk/exec";
@@ -28,6 +37,7 @@ export function loadSheetsConfig(): SheetsConfig {
     autoPull: localStorage.getItem(STORAGE_KEYS.AUTO_PULL) !== "false",
     autoPush: localStorage.getItem(STORAGE_KEYS.AUTO_PUSH) !== "false",
     logsEnabled: localStorage.getItem(STORAGE_KEYS.LOGS_ENABLED) !== "false",
+    writeToken: localStorage.getItem(STORAGE_KEYS.WRITE_TOKEN) || "",
   };
 }
 
@@ -37,6 +47,7 @@ export function saveSheetsConfig(config: Partial<SheetsConfig>): void {
   if (config.autoPull !== undefined) localStorage.setItem(STORAGE_KEYS.AUTO_PULL, String(config.autoPull));
   if (config.autoPush !== undefined) localStorage.setItem(STORAGE_KEYS.AUTO_PUSH, String(config.autoPush));
   if (config.logsEnabled !== undefined) localStorage.setItem(STORAGE_KEYS.LOGS_ENABLED, String(config.logsEnabled));
+  if (config.writeToken !== undefined) localStorage.setItem(STORAGE_KEYS.WRITE_TOKEN, config.writeToken.trim());
 }
 
 export async function writeActionLogToSheet(
@@ -62,13 +73,16 @@ export async function writeActionLogToSheet(
   }
 }
 
-export async function pullCustomersFromGoogleSheet(webAppUrl: string): Promise<AccountingCustomer[]> {
+export async function pullCustomersFromGoogleSheet(webAppUrl: string, sheetName: string): Promise<any[]> {
   if (!webAppUrl) return [];
   try {
-    const response = await fetch(`${webAppUrl}?action=get_rules`);
+    const response = await fetch(`${webAppUrl}?action=get_rules&sheetName=${encodeURIComponent(sheetName)}`);
     if (response.ok) {
       const result = await response.json();
       if (result.status === "success" && result.data) {
+        if (sheetName === "Bảng Mã Khách Hàng BIZFLY") {
+          return parseBizflyCustomerRows(result.data);
+        }
         return parseCustomerRows(result.data);
       }
     }
@@ -102,7 +116,34 @@ function parseCustomerRows(rows: any[][]): AccountingCustomer[] {
   return customers;
 }
 
-export async function pushCustomersToGoogleSheet(customers: AccountingCustomer[], webAppUrl: string, userStr: string): Promise<void> {
+function parseBizflyCustomerRows(rows: any[][]): BizflyCustomer[] {
+  const customers: BizflyCustomer[] = [];
+  
+  rows.forEach((row: any) => {
+    const soPL = String(row[0] || "").trim();
+    const tenSale = String(row[1] || "").trim();
+    const nhanHang = String(row[2] || "").trim();
+    const customerCode = String(row[3] || "").trim();
+    
+    if (soPL || customerCode) {
+      customers.push({
+        soPL,
+        tenSale,
+        nhanHang,
+        customerCode
+      });
+    }
+  });
+  
+  return customers;
+}
+
+export async function pushCustomersToGoogleSheet(
+  customers: AccountingCustomer[], 
+  webAppUrl: string, 
+  userStr: string,
+  token: string = ""
+): Promise<void> {
   if (!webAppUrl || customers.length === 0) return;
   
   const values: any[][] = customers.map(c => [
@@ -119,13 +160,20 @@ export async function pushCustomersToGoogleSheet(customers: AccountingCustomer[]
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({
         action: "overwrite_rules",
+        sheetName: "Bảng Mã Khách Hàng Chuẩn", // Chỉ Cloud mới được phép overwrite
         rules: values,
-        user: userStr
+        user: userStr,
+        token: token // Truyền token xác thực cho write action
       })
     });
     
     if (!response.ok) {
       throw new Error(`Web App returned error: ${response.statusText}`);
+    } else {
+      const result = await response.json();
+      if (result.status === "error") {
+        throw new Error(result.message || "Lỗi không xác định từ Apps Script");
+      }
     }
   } catch(err) {
     console.error("Failed to push customers to sheets", err);
