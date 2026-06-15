@@ -45,7 +45,8 @@ import {
   writeActionLogToSheet,
   DEFAULT_WEB_APP_URL,
   BizflyCustomer,
-  loadSheetsConfig
+  loadSheetsConfig,
+  saveSheetsConfig
 } from "./utils/googleSheetsSync";
 import {
   reconcileBizfly,
@@ -336,7 +337,7 @@ export default function App() {
     if (mode === "cloud") {
       setCloudCustomers(data);
     } else {
-      setBizflyCustomers(data);
+      setBizflyCustomers(fillEmptyBizflyData(data));
     }
   };
 
@@ -406,6 +407,21 @@ export default function App() {
     return localStorage.getItem("google_sheets_user_email") || "Kế toán viên";
   });
 
+  const [sheetsUrl, setSheetsUrl] = useState(() => loadSheetsConfig().webAppUrl);
+  const [sheetsToken, setSheetsToken] = useState(() => loadSheetsConfig().writeToken);
+
+  const handleSaveConnectionSettings = () => {
+    if (!sheetsUrl.trim()) {
+      showToast("URL Web App không được để trống!", "error");
+      return;
+    }
+    saveSheetsConfig({
+      webAppUrl: sheetsUrl.trim(),
+      writeToken: sheetsToken.trim(),
+    });
+    showToast("Đã lưu cấu hình kết nối Google Sheets!", "success");
+  };
+
   // Auto-pull and parse email from AI Hub hash and IndexedDB
   React.useEffect(() => {
     // 1. Lấy email từ URL
@@ -436,7 +452,7 @@ export default function App() {
     // 3. Auto-pull dữ liệu khi mở
     const cfgStr = localStorage.getItem("google_sheets_sync_auto_pull");
     const autoPull = cfgStr !== "false";
-    const webAppUrl = DEFAULT_WEB_APP_URL;
+    const webAppUrl = loadSheetsConfig().webAppUrl;
 
     if (autoPull && webAppUrl) {
       pullCustomersFromGoogleSheet(webAppUrl, "Bảng Mã Khách Hàng Chuẩn").then(data => {
@@ -533,12 +549,12 @@ export default function App() {
 
       // Tự động tải bảng mã khách hàng BIZFLY từ Google Sheets nếu danh bạ trống
       if (bizflyCustomers.length === 0) {
-        const webAppUrl = DEFAULT_WEB_APP_URL;
+        const webAppUrl = loadSheetsConfig().webAppUrl;
         if (webAppUrl) {
           showToast("Đang tải danh bạ BIZFLY từ Google Sheets...", "info");
           pullCustomersFromGoogleSheet(webAppUrl, "Bảng Mã Khách Hàng BIZFLY").then(data => {
             if (data && data.length > 0) {
-              setBizflyCustomers(data);
+              setBizflyCustomers(fillEmptyBizflyData(data));
               showToast(`Đã tải thành công ${data.length} mã khách BIZFLY`, "success");
             } else {
               showToast("Bảng mã BIZFLY trống hoặc chưa cấu hình trên Sheets", "info");
@@ -553,7 +569,7 @@ export default function App() {
   };
 
   const handleSyncFromGoogleSheets = () => {
-    const webAppUrl = DEFAULT_WEB_APP_URL;
+    const webAppUrl = loadSheetsConfig().webAppUrl;
     if (!webAppUrl) {
       showToast("Chưa cấu hình URL Web App Google Sheets", "error");
       return;
@@ -770,7 +786,9 @@ export default function App() {
           showToast(`Đã cập nhật danh bạ khách chuẩn từ file: ${file.name}`, "success");
           
           // Tự động đồng bộ lên Google Sheets
-          pushCustomersToGoogleSheet(newCustomers, DEFAULT_WEB_APP_URL, userEmail).then(() => {
+          const sheetsConfig = loadSheetsConfig();
+          const writeToken = sheetsConfig.writeToken;
+          pushCustomersToGoogleSheet(newCustomers, sheetsConfig.webAppUrl, userEmail, writeToken).then(() => {
             showToast("Đã đồng bộ lên Google Sheets thành công!", "success");
           }).catch(err => {
             console.error("Lỗi đồng bộ", err);
@@ -784,24 +802,23 @@ export default function App() {
             setIsParsingLoading(false);
             return;
           }
-          setBizflyCustomers(parsedCustomers);
+          const filledCustomers = fillEmptyBizflyData(parsedCustomers);
+          setBizflyCustomers(filledCustomers);
           showToast(`Đã cập nhật danh bạ BIZFLY từ file: ${file.name}`, "success");
           
-          // Tạo mảng ghi đè chuẩn 54 cột cho Google Sheets
-          const formattedRules = parsedCustomers.map(c => {
-            const row = new Array(54).fill("");
-            row[5] = c.soPL;
-            row[7] = c.tenSale;
-            row[9] = c.nhanHang;
-            row[53] = c.customerCode;
-            return row;
-          });
+          // Tạo mảng ghi đè chuẩn 4 cột gọn gàng cho Google Sheets (Số PL, Tên sale, Nhãn hàng, Mã khách)
+          const formattedRules = filledCustomers.map(c => [
+            c.soPL,
+            c.tenSale,
+            c.nhanHang,
+            c.customerCode
+          ]);
 
           // Tự động đồng bộ lên Google Sheets
           const sheetsConfig = loadSheetsConfig();
           const writeToken = sheetsConfig.writeToken;
           
-          pushBizflyCustomersToGoogleSheet(formattedRules, DEFAULT_WEB_APP_URL, userEmail, writeToken).then(() => {
+          pushBizflyCustomersToGoogleSheet(formattedRules, sheetsConfig.webAppUrl, userEmail, writeToken).then(() => {
             showToast("Đã đồng bộ lên Google Sheets thành công!", "success");
           }).catch(err => {
             console.error("Lỗi đồng bộ BIZFLY:", err);
@@ -1029,29 +1046,58 @@ export default function App() {
     let headerRowIndex = -1;
     let colIndices = { soPL: -1, tenSale: -1, nhanHang: -1, code: -1 };
 
+    const cleanHeader = (str: any): string => {
+      if (!str) return "";
+      return String(str)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+    };
+
     for (let r = 0; r < Math.min(rows.length, 15); r++) {
       const row = rows[r];
       if (!row) continue;
       
       const codeIdx = row.findIndex(
-        (cell) => cell && (
-          String(cell).toLowerCase().includes("mã khách") || 
-          String(cell).toLowerCase().includes("ma kh") || 
-          String(cell).toLowerCase() === "mã" || 
-          String(cell).toLowerCase() === "ma"
-        )
+        (cell) => {
+          if (!cell) return false;
+          const cleaned = cleanHeader(cell);
+          return cleaned.includes("ma khach") || cleaned.includes("ma kh") || cleaned === "ma";
+        }
       );
       
       if (codeIdx !== -1) {
         headerRowIndex = r;
         colIndices.code = codeIdx;
-        row.forEach((cell, idx) => {
-          if (!cell) return;
-          const s = String(cell).toLowerCase().trim();
-          if (s.includes("số pl") || s.includes("so pl")) colIndices.soPL = idx;
-          else if (s.includes("tên sale") || s.includes("ten sale") || s.includes("sale")) colIndices.tenSale = idx;
-          else if (s.includes("nhãn hàng") || s.includes("nhan hang") || s.includes("setup") || s.includes("set-up")) colIndices.nhanHang = idx;
-        });
+        
+        // Hỗ trợ đọc cả dòng tiêu đề hiện tại và dòng ngay trên đó (để xử lý ô gộp/merged header trong Excel)
+        const headerRow = rows[r];
+        const prevRow = r > 0 ? rows[r - 1] : null;
+        const maxCols = Math.max(headerRow.length, prevRow ? prevRow.length : 0);
+        
+        for (let idx = 0; idx < maxCols; idx++) {
+          const cell = headerRow[idx];
+          const prevCell = prevRow ? prevRow[idx] : null;
+          const cellStr = cell ? String(cell) : (prevCell ? String(prevCell) : "");
+          if (!cellStr) continue;
+          
+          const cleaned = cleanHeader(cellStr);
+          if (cleaned.includes("so pl") || cleaned.includes("ma don hang")) {
+            colIndices.soPL = idx;
+          } else if (cleaned.includes("ten sale") || cleaned.includes("sale")) {
+            colIndices.tenSale = idx;
+          } else if (
+            idx > 0 && (
+              cleaned.includes("nhan hang") || 
+              cleaned.includes("setup") || 
+              cleaned.includes("set-up") || 
+              (cleaned.includes("nhan") && !cleaned.includes("nhan xet") && !cleaned.includes("nhan vien"))
+            )
+          ) {
+            colIndices.nhanHang = idx;
+          }
+        }
         break;
       }
     }
@@ -1059,6 +1105,12 @@ export default function App() {
     if (headerRowIndex === -1) {
       headerRowIndex = 1;
       colIndices = { soPL: 5, tenSale: 7, nhanHang: 9, code: 53 };
+    } else {
+      // Fallback mặc định cho từng cột của BIZFLY nếu không tìm thấy tiêu đề phù hợp
+      if (colIndices.soPL === -1) colIndices.soPL = 5;       // Cột F
+      if (colIndices.tenSale === -1) colIndices.tenSale = 7;   // Cột H
+      if (colIndices.nhanHang === -1) colIndices.nhanHang = 9; // Cột J
+      if (colIndices.code === -1) colIndices.code = 53;       // Cột BB
     }
 
     const parsedCustomers: BizflyCustomer[] = [];
@@ -1081,6 +1133,46 @@ export default function App() {
       }
     }
     return parsedCustomers;
+  };
+
+  // Tự động điền (fill down) Nhãn hàng và Sale cho các dòng trống chung Số PL
+  const fillEmptyBizflyData = (customers: BizflyCustomer[]): BizflyCustomer[] => {
+    const plToDataMap = new Map<string, { tenSale: string, nhanHang: string }>();
+    
+    // Bước 1: Quét tìm thông tin đầy đủ nhất của mỗi Số PL
+    customers.forEach(c => {
+      if (c.soPL) {
+        const key = c.soPL.trim().toLowerCase();
+        const existing = plToDataMap.get(key);
+        const currentSale = c.tenSale || "";
+        const currentNhanHang = c.nhanHang || "";
+        
+        if (!existing) {
+          if (currentSale || currentNhanHang) {
+            plToDataMap.set(key, { tenSale: currentSale, nhanHang: currentNhanHang });
+          }
+        } else {
+          if (currentSale && !existing.tenSale) existing.tenSale = currentSale;
+          if (currentNhanHang && !existing.nhanHang) existing.nhanHang = currentNhanHang;
+        }
+      }
+    });
+    
+    // Bước 2: Điền dữ liệu vào các dòng trống
+    return customers.map(c => {
+      if (c.soPL) {
+        const key = c.soPL.trim().toLowerCase();
+        const mapped = plToDataMap.get(key);
+        if (mapped) {
+          return {
+            ...c,
+            tenSale: c.tenSale || mapped.tenSale,
+            nhanHang: c.nhanHang || mapped.nhanHang
+          };
+        }
+      }
+      return c;
+    });
   };
 
   // 1. Regular Expressions for Extracting Email Identities
@@ -2099,6 +2191,44 @@ export default function App() {
                     </ul>
                   </div>
                 )}
+
+                {/* Connection Settings Card */}
+                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-3">
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1.5 font-semibold">
+                    <Settings className="w-4 h-4 text-blue-500" />
+                    Thiết lập kết nối Google Sheets
+                  </h3>
+                  
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">URL Web App Google Sheets</label>
+                    <input
+                      type="text"
+                      value={sheetsUrl}
+                      onChange={(e) => setSheetsUrl(e.target.value)}
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Token xác thực (Write Token)</label>
+                    <input
+                      type="password"
+                      value={sheetsToken}
+                      onChange={(e) => setSheetsToken(e.target.value)}
+                      placeholder="Mã token bảo vệ ghi đè"
+                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveConnectionSettings}
+                    className="w-full py-1.5 bg-slate-800 hover:bg-slate-900 active:bg-black text-white font-bold rounded text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    Lưu thiết lập
+                  </button>
+                </div>
               </div>
 
               {/* Right Column: Search and List View */}
@@ -2710,9 +2840,13 @@ export default function App() {
               
               <datalist id="accounting-customers-list">
                 <option value="KH_CHUA_PHAN_LOAI">KH_CHUA_PHAN_LOAI</option>
-                {accountingCustomers.map((cust) => (
+                {Array.from(new Map(
+                  (accountingCustomers as any[])
+                    .filter(c => c && c.customerCode)
+                    .map(cust => [cust.customerCode, cust])
+                ).values()).map((cust: any) => (
                   <option key={cust.customerCode} value={cust.customerCode}>
-                    {cust.customerCode} - {cust.companyName}
+                    {cust.customerCode} {cust.companyName ? `- ${cust.companyName}` : cust.tenSale ? `- ${cust.tenSale}` : ""}
                   </option>
                 ))}
               </datalist>

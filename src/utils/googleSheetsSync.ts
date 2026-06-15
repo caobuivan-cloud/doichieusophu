@@ -31,17 +31,18 @@ export const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxLA
 
 export function loadSheetsConfig(): SheetsConfig {
   return {
-    webAppUrl: DEFAULT_WEB_APP_URL,
+    webAppUrl: localStorage.getItem(STORAGE_KEYS.WEB_APP_URL) || DEFAULT_WEB_APP_URL,
     userEmail: localStorage.getItem(STORAGE_KEYS.USER_EMAIL) || "Unknown User",
     syncEnabled: localStorage.getItem(STORAGE_KEYS.SYNC_ENABLED) !== "false",
     autoPull: localStorage.getItem(STORAGE_KEYS.AUTO_PULL) !== "false",
     autoPush: localStorage.getItem(STORAGE_KEYS.AUTO_PUSH) !== "false",
     logsEnabled: localStorage.getItem(STORAGE_KEYS.LOGS_ENABLED) !== "false",
-    writeToken: localStorage.getItem(STORAGE_KEYS.WRITE_TOKEN) || "",
+    writeToken: localStorage.getItem(STORAGE_KEYS.WRITE_TOKEN) || "default_token_please_change",
   };
 }
 
 export function saveSheetsConfig(config: Partial<SheetsConfig>): void {
+  if (config.webAppUrl !== undefined) localStorage.setItem(STORAGE_KEYS.WEB_APP_URL, config.webAppUrl.trim());
   if (config.userEmail !== undefined) localStorage.setItem(STORAGE_KEYS.USER_EMAIL, config.userEmail.trim());
   if (config.syncEnabled !== undefined) localStorage.setItem(STORAGE_KEYS.SYNC_ENABLED, String(config.syncEnabled));
   if (config.autoPull !== undefined) localStorage.setItem(STORAGE_KEYS.AUTO_PULL, String(config.autoPull));

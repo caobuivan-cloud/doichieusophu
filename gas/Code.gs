@@ -17,16 +17,12 @@ function setupSheets() {
     // Tạo dòng header tại dòng 2
     sheetBizfly.appendRow([]); // Dòng 1 trống
     
-    // Ghi tiêu đề vào dòng 2 tại các cột tương ứng để giữ layout Excel
-    // F (cột 6): Số PL
-    // H (cột 8): Tên sale
-    // J (cột 10): Nhãn hàng/TK setup
-    // BB (cột 54): Mã khách
-    sheetBizfly.getRange("F2").setValue("Số PL");
-    sheetBizfly.getRange("H2").setValue("Tên sale");
-    sheetBizfly.getRange("J2").setValue("Nhãn hàng/TK set-up dv");
-    sheetBizfly.getRange("BB2").setValue("Mã khách");
-    sheetBizfly.getRange("A2:BB2").setFontWeight("bold");
+    // Ghi tiêu đề vào dòng 2 tại các cột A, B, C, D thay vì chừa trống nhiều cột
+    sheetBizfly.getRange("A2").setValue("Số PL");
+    sheetBizfly.getRange("B2").setValue("Tên sale");
+    sheetBizfly.getRange("C2").setValue("Nhãn hàng/TK set-up dv");
+    sheetBizfly.getRange("D2").setValue("Mã khách");
+    sheetBizfly.getRange("A2:D2").setFontWeight("bold");
     sheetBizfly.setFrozenRows(2);
     
     // Ghi log cảnh báo sheet BIZFLY trống vừa tạo
@@ -104,14 +100,13 @@ function doGet(e) {
       // Loại bỏ 2 dòng header trên server (data.slice(2))
       var rawRows = data.slice(2);
       
-      // Tối ưu hóa: Trích xuất chỉ 4 cột cần thiết F(5), H(7), J(9), BB(53)
-      // RAW_SHEET_COLUMN_MAP: F=5, H=7, J=9, BB=53
+      // Trích xuất trực tiếp từ 4 cột đầu (A=0, B=1, C=2, D=3)
       var projectedData = rawRows.map(function(row) {
-        var soPL = row[5] ? String(row[5]).trim() : "";
-        var tenSale = row[7] ? String(row[7]).trim() : "";
-        var nhanHang = row[9] ? String(row[9]).trim() : "";
-        var maKhach = row[53] ? String(row[53]).trim() : "";
-        return [soPL, tenSale, nhanHang, maKhach]; // Trả về mảng 4 cột projected
+        var soPL = row[0] ? String(row[0]).trim() : "";
+        var tenSale = row[1] ? String(row[1]).trim() : "";
+        var nhanHang = row[2] ? String(row[2]).trim() : "";
+        var maKhach = row[3] ? String(row[3]).trim() : "";
+        return [soPL, tenSale, nhanHang, maKhach];
       });
       
       return createJsonResponse({ status: "success", data: projectedData });
