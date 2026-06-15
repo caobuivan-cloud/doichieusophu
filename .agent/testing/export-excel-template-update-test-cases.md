@@ -8,7 +8,7 @@
 
 ## 1. Mục tiêu kiểm thử
 
-- Xác định độ chính xác và tính tương thích của tệp Excel xuất ra (21 cột, tiêu đề bắt đầu từ Dòng 1).
+- Xác định độ chính xác và tính tương thích của tệp Excel xuất ra (21 cột, ô A1 chứa "Import phiếu báo có", tiêu đề cột ở Dòng 2).
 - Kiểm chứng tính ổn định của các thuật toán phụ trợ: chuẩn hóa ngày, tăng số chứng từ động, lọc lý do nộp, parse tỷ giá.
 - Đảm bảo các chốt chặn cảnh báo (Warning Gates) và validate trực quan trên UI Modal hoạt động đúng yêu cầu nghiệp vụ.
 
@@ -22,9 +22,9 @@
 | ID | Bước kiểm thử | Kết quả mong đợi |
 |----|----------------|------------------|
 | HP-01 | Mở Modal Xuất Excel bằng cách nhấn "Xuất toàn bộ danh sách" | Modal hiện lên đầy đủ thông tin chia nhóm, các trường tự điền giá trị mặc định chuẩn xác. |
-| HP-02 | Nhập Số chứng từ bắt đầu `GBC004774`, Tỷ giá `24.500,75` | Dòng Preview cuối modal cập nhật hiển thị chính xác dòng hạch toán đầu tiên (Số chứng từ `GBC004774`, Tỷ giá `24500.75`, Tiền = Tiền NT * 24500.75). |
-| HP-03 | Nhấn "Xác nhận xuất (.xlsx)" | Tải xuống thành công tệp `GIAY_BAO_CO_VCCLOUD.xlsx` với 21 cột, bắt đầu từ Dòng 1 là Tiêu đề. |
-| HP-04 | Mở tệp Excel tải về | Các cột mã (Số chứng từ, Tài khoản, Mã khách) đều có kiểu Text (`t: 's'`), giữ nguyên số `0` ở đầu. Số chứng từ các dòng tăng tuần tự. |
+| HP-02 | Nhập Số chứng từ bắt đầu `GBC004774`, Tỷ giá `24.500,75` | Dòng Preview cuối modal cập nhật hiển thị chính xác dòng hạch toán đầu tiên (Số chứng từ `GBC004774`, Tỷ giá `24500.75`, Tiền = Tiền NT * 24500.75) dưới nhãn "Excel Row 3 Preview". |
+| HP-03 | Nhấn "Xác nhận xuất (.xlsx)" | Tải xuống thành công tệp `GIAY_BAO_CO_VCCLOUD.xlsx` với 21 cột, Dòng 1 chứa "Import phiếu báo có", Dòng 2 là Tiêu đề cột. |
+| HP-04 | Mở tệp Excel tải về | Các cột mã (Số chứng từ, Tài khoản, Mã khách) đều có kiểu Text (`t: 's'`), giữ nguyên số `0` ở đầu. Số chứng từ các dòng tăng tuần tự bắt đầu từ Dòng 3 (dòng dữ liệu đầu tiên). |
 
 ## 4. Edge / Regression
 
@@ -34,7 +34,7 @@
 | RG-02 | Giao dịch có email đối chiếu (ví dụ: diễn giải gốc `Nộp tiền cloud`, email đối chiếu `hungxd@vcc.vn`) | Cột 4 (Lý do nộp) hiển thị `Nộp tiền cloud` (diễn giải gốc), cột 15 (Diễn giải) hiển thị `Nộp tiền cloud (hungxd@vcc.vn)`. |
 | RG-03 | Giao dịch không có email đối chiếu (ví dụ: diễn giải gốc `Nộp tiền cloud`, email đối chiếu trống) | Cột 4 và Cột 15 đều hiển thị diễn giải gốc `Nộp tiền cloud`. |
 | RG-04 | Dòng hạch toán chưa phân loại (`KH_CHUA_PHAN_LOAI`) trên UI | Trên giao diện chính vẫn hiển thị nhãn màu hổ phách `KH_CHUA_PHAN_LOAI`. |
-| RG-05 | Xuất Excel có chứa dòng `KH_CHUA_PHAN_LOAI` | Dòng xem trước (Excel Row 2 Preview) và File Excel tải về có mã khách hàng tại Cột 2 (Mã khách) và Cột 12 (Mã khách ct) tự động gán là `KH020219`. |
+| RG-05 | Xuất Excel có chứa dòng `KH_CHUA_PHAN_LOAI` | Dòng xem trước (Excel Row 3 Preview) và File Excel tải về có mã khách hàng tại Cột 2 (Mã khách) và Cột 12 (Mã khách ct) tự động gán là `KH020219`. |
 | RG-06 | Nhấn nút "Xuất KH Chưa Khớp" (`handleExportUnclassifiedXlsx`) | File Excel tải về của danh sách KH chưa khớp có cột Mã khách để trống `""`, không bị gán mã `KH020219`. |
 
 ## 5. Negative Cases

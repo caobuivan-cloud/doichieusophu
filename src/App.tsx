@@ -1096,7 +1096,10 @@ export default function App() {
       "Mã quyển"
     ];
 
-    const wsData: any[] = [headers];
+    const wsData: any[] = [
+      ["Import phiếu báo có"],
+      headers
+    ];
 
     filteredRows.forEach((r, idx) => {
       const finalTkCo = manualRows[r.id]?.tkCo || exportConfig.tkCo;
@@ -1139,7 +1142,7 @@ export default function App() {
     const colLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U"];
     const forceStringCols = [0, 1, 2, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 17, 18, 19, 20];
 
-    for (let rIdx = 1; rIdx < wsData.length; rIdx++) {
+    for (let rIdx = 2; rIdx < wsData.length; rIdx++) {
       colLetters.forEach((letter, cIdx) => {
         const cellRef = `${letter}${rIdx + 1}`;
         if (ws[cellRef]) {
@@ -2311,7 +2314,7 @@ export default function App() {
               <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/20 space-y-3">
                 <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide">
                   <Search className="w-4 h-4 text-indigo-500" />
-                  Xem trước dòng hạch toán đầu tiên (Excel Row 2 Preview)
+                  Xem trước dòng hạch toán đầu tiên (Excel Row 3 Preview)
                 </h4>
                 {filteredRows.length === 0 ? (
                   <p className="text-xs text-slate-400 italic">Không có dữ liệu giao dịch hiển thị hiện tại để hiển thị preview.</p>

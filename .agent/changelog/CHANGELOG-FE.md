@@ -10,6 +10,8 @@
 
 ### feat: Tự động gán mã KH020219 cho khách chưa phân loại khi xuất Excel
 - Tự động đổi mã khách từ `KH_CHUA_PHAN_LOAI` sang `KH020219` trong tệp Excel Giấy Báo Có tải về và trong bảng Preview.
+- Thêm dòng tiêu đề đầu tiên `"Import phiếu báo có"` vào ô A1 khi xuất Excel (dòng header dịch chuyển xuống dòng 2, dữ liệu bắt đầu từ dòng 3).
+- Cập nhật nhãn dòng xem trước trong Modal thành `Excel Row 3 Preview` để phản ánh đúng cấu trúc thực tế.
 - Giữ nguyên hiển thị mã `KH_CHUA_PHAN_LOAI` trên màn hình UI để kế toán viên dễ dàng theo dõi.
 - Không tự động gán mã khách này khi xuất file bổ sung qua nút "Xuất KH Chưa Khớp" (giữ nguyên để trống `""`).
 - **Files:** `src/App.tsx`
