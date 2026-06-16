@@ -1285,7 +1285,7 @@ export default function App() {
         ? reconcileBizfly(bizflyFile1Rows, bizflyFile2Rows, bizflyCustomers)
         : bizflyFile1Rows.slice(Math.max(10, bizflyFile1Rows.findIndex(row => row && row.some(cell => String(cell || "").toLowerCase().includes("diễn giải")))) + 1).map((row, rIdx) => {
             const dienGiai = String(row[3] || "").trim();
-            const ngayCt = String(row[1] || "").trim();
+            const ngayCt = String(row[0] || "").trim();
             const refNo = String(row[2] || "").trim();
             const phatSinhCoStr = String(row[6] || "0");
             const phatSinhCo = parseFloat(phatSinhCoStr.replace(/,/g, ""));

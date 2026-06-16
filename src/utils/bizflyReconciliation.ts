@@ -111,7 +111,7 @@ export function reconcileBizfly(
     if (!row || row.length === 0) continue;
 
     const dienGiai = String(row[3] || "").trim(); // Cột D (index 3)
-    const ngayCt = String(row[1] || "").trim();   // Cột B (index 1)
+    const ngayCt = String(row[0] || "").trim();   // Cột A (index 0)
     const refNo = String(row[2] || "").trim();     // Cột C (index 2)
     const phatSinhCoStr = String(row[6] || "0");   // Cột G (index 6)
     
