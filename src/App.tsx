@@ -1730,24 +1730,21 @@ export default function App() {
       
       let finalDienGiai = r.dienGiai;
       if (mode === "bizfly") {
-        if (r.matchType !== "unmatched") {
-          const nhanHang = (r as any).bizflyNhanHang || "";
-          const tenSale = (r as any).bizflyTenSale || "";
-          const soPL = r.hopDong || "";
-          
-          const parts: string[] = [r.dienGiai];
-          if (nhanHang) {
-            parts.push(`(${nhanHang})`);
-          }
-          if (tenSale) {
-            parts.push(`(${tenSale})`);
-          }
-          let joined = parts.join(" ");
-          if (soPL) {
-            joined = `${joined} - ${soPL}`;
-          }
-          finalDienGiai = joined.trim().replace(/\s+/g, " ");
+        const nhanHang = (r as any).bizflyNhanHang || "";
+        const tenSale = (r as any).bizflyTenSale || "";
+        const soPL = r.hopDong || "";
+        
+        const parts: string[] = [r.dienGiai];
+        if (nhanHang) {
+          parts.push(`(${nhanHang})`);
         }
+        if (tenSale) {
+          parts.push(`(${tenSale})`);
+        }
+        let joined = parts.join(" ");
+        const displaySoPL = soPL || "KH036906";
+        joined = `${joined} - ${displaySoPL}`;
+        finalDienGiai = joined.trim().replace(/\s+/g, " ");
       } else {
         finalDienGiai = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
       }
@@ -3172,24 +3169,21 @@ export default function App() {
                     const finalBoPhan = manualRows[r.id]?.boPhan || exportConfig.boPhan;
                     let dienGiaiWithEmail = r.dienGiai;
                     if (mode === "bizfly") {
-                      if (r.matchType !== "unmatched") {
-                        const nhanHang = (r as any).bizflyNhanHang || "";
-                        const tenSale = (r as any).bizflyTenSale || "";
-                        const soPL = r.hopDong || "";
-                        
-                        const parts: string[] = [r.dienGiai];
-                        if (nhanHang) {
-                          parts.push(`(${nhanHang})`);
-                        }
-                        if (tenSale) {
-                          parts.push(`(${tenSale})`);
-                        }
-                        let joined = parts.join(" ");
-                        if (soPL) {
-                          joined = `${joined} - ${soPL}`;
-                        }
-                        dienGiaiWithEmail = joined.trim().replace(/\s+/g, " ");
+                      const nhanHang = (r as any).bizflyNhanHang || "";
+                      const tenSale = (r as any).bizflyTenSale || "";
+                      const soPL = r.hopDong || "";
+                      
+                      const parts: string[] = [r.dienGiai];
+                      if (nhanHang) {
+                        parts.push(`(${nhanHang})`);
                       }
+                      if (tenSale) {
+                        parts.push(`(${tenSale})`);
+                      }
+                      let joined = parts.join(" ");
+                      const displaySoPL = soPL || "KH036906";
+                      joined = `${joined} - ${displaySoPL}`;
+                      dienGiaiWithEmail = joined.trim().replace(/\s+/g, " ");
                     } else {
                       dienGiaiWithEmail = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
                     }
