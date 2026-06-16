@@ -1327,7 +1327,7 @@ export default function App() {
           tkCo: exportConfig.tkCo,
           tenTkCo: globalTenTkCo,
           maKhach: item.maKhach,
-          tenKhach: item.tenSale ? `${item.tenSale} (${item.nhanHang})` : (item.maKhach === "KH020219" ? "Khách hàng Bizfly lẻ" : "Khách hàng Bizfly"),
+          tenKhach: item.tenSale ? `${item.tenSale} (${item.nhanHang})` : (item.maKhach === "KH036906" || item.maKhach === "KH020219" ? "Khách hàng Bizfly lẻ" : "Khách hàng Bizfly"),
           vuViec: exportConfig.vuViec,
           boPhan: exportConfig.boPhan,
           hopDong: item.soPL,
@@ -1751,7 +1751,9 @@ export default function App() {
 
       const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, idx);
       const formattedDate = normalizeDate(r.date);
-      const customerCodeForExcel = r.maKhach === "KH_CHUA_PHAN_LOAI" ? "KH020219" : r.maKhach;
+      const customerCodeForExcel = r.maKhach === "KH_CHUA_PHAN_LOAI" 
+        ? (mode === "bizfly" ? "KH036906" : "KH020219") 
+        : r.maKhach;
 
       wsData.push([
         { v: exportConfig.dvcs, t: "s" },
@@ -3189,7 +3191,9 @@ export default function App() {
                     }
                     const formattedDocNum = generateDocumentNumber(exportConfig.soCtStart, 0);
                     const formattedDate = normalizeDate(r.date);
-                    const customerCodeForExcel = r.maKhach === "KH_CHUA_PHAN_LOAI" ? "KH020219" : r.maKhach;
+                    const customerCodeForExcel = r.maKhach === "KH_CHUA_PHAN_LOAI" 
+                      ? (mode === "bizfly" ? "KH036906" : "KH020219") 
+                      : r.maKhach;
                     
                     return (
                       <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-xs">

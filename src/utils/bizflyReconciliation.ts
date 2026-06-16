@@ -17,7 +17,7 @@ export interface BizflyReconciliationRow {
   soPL: string;       // Số PL/Mã đơn hàng tìm thấy từ File 2 hoặc rỗng
   tenSale: string;    // Tên sale từ bảng mã KH BIZFLY
   nhanHang: string;   // Nhãn hàng/TK set-up dv từ bảng mã KH BIZFLY
-  maKhach: string;    // Mã khách hàng chuẩn (Matched hoặc mặc định KH020219)
+  maKhach: string;    // Mã khách hàng chuẩn (Matched hoặc mặc định KH036906)
   matchType: "strict" | "unmatched";
   confidence: number;
   reasoning: string;
@@ -141,10 +141,10 @@ export function reconcileBizfly(
           matchType = "strict";
           reasoning = `Khớp Số PL "${matchedSoPL}" từ File 2 và tìm thấy trong bảng mã BIZFLY.`;
         } else {
-          reasoning = `Khớp Số PL "${matchedSoPL}" từ File 2 nhưng không tìm thấy Số PL này trong bảng mã khách BIZFLY. Tự động gán KH020219.`;
+          reasoning = `Khớp Số PL "${matchedSoPL}" từ File 2 nhưng không tìm thấy Số PL này trong bảng mã khách BIZFLY. Tự động gán KH036906.`;
         }
       } else {
-        reasoning = `Không tìm thấy Diễn giải hạch toán khớp trong File 2. Tự động gán KH020219.`;
+        reasoning = `Không tìm thấy Diễn giải hạch toán khớp trong File 2. Tự động gán KH036906.`;
       }
 
       // Điền thông tin dòng đối soát
@@ -158,7 +158,7 @@ export function reconcileBizfly(
         soPL: matchedSoPL,
         tenSale: matchedCust?.tenSale || "",
         nhanHang: matchedCust?.nhanHang || "",
-        maKhach: matchedCust?.customerCode || "KH020219", // Tự động gán mã mặc định KH020219
+        maKhach: matchedCust?.customerCode || "KH036906", // Tự động gán mã mặc định KH036906
         matchType,
         confidence: matchType === "strict" ? 1.0 : 0.0,
         reasoning

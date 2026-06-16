@@ -68,13 +68,13 @@ try {
     throw new Error("Lỗi đối soát dòng 2!");
   }
 
-  // Row 2 check: unmatched, should default to KH020219
+  // Row 2 check: unmatched, should default to KH036906
   const r2 = result[2];
   console.log("\nKiểm tra dòng 3 (Không khớp -> Mã mặc định):");
-  console.log(`- maKhach: ${r2.maKhach} (Mong đợi: KH020219)`);
+  console.log(`- maKhach: ${r2.maKhach} (Mong đợi: KH036906)`);
   console.log(`- tenSale: "${r2.tenSale}" (Mong đợi: "")`);
   console.log(`- matchType: ${r2.matchType} (Mong đợi: unmatched)`);
-  if (r2.maKhach !== "KH020219" || r2.matchType !== "unmatched" || r2.tenSale !== "") {
+  if (r2.maKhach !== "KH036906" || r2.matchType !== "unmatched" || r2.tenSale !== "") {
     throw new Error("Lỗi đối soát dòng 3!");
   }
 
