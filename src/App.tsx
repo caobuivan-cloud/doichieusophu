@@ -1734,17 +1734,20 @@ export default function App() {
         const tenSale = (r as any).bizflyTenSale || "";
         const soPL = r.hopDong || "";
         
-        const parts: string[] = [r.dienGiai];
-        if (nhanHang) {
-          parts.push(`(${nhanHang})`);
+        if (soPL) {
+          const parts: string[] = [r.dienGiai];
+          if (nhanHang) {
+            parts.push(`(${nhanHang})`);
+          }
+          if (tenSale) {
+            parts.push(`(${tenSale})`);
+          }
+          let joined = parts.join(" ");
+          joined = `${joined} - ${soPL}`;
+          finalDienGiai = joined.trim().replace(/\s+/g, " ");
+        } else {
+          finalDienGiai = r.dienGiai;
         }
-        if (tenSale) {
-          parts.push(`(${tenSale})`);
-        }
-        let joined = parts.join(" ");
-        const displaySoPL = soPL || "KH036906";
-        joined = `${joined} - ${displaySoPL}`;
-        finalDienGiai = joined.trim().replace(/\s+/g, " ");
       } else {
         finalDienGiai = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
       }
@@ -3175,17 +3178,20 @@ export default function App() {
                       const tenSale = (r as any).bizflyTenSale || "";
                       const soPL = r.hopDong || "";
                       
-                      const parts: string[] = [r.dienGiai];
-                      if (nhanHang) {
-                        parts.push(`(${nhanHang})`);
+                      if (soPL) {
+                        const parts: string[] = [r.dienGiai];
+                        if (nhanHang) {
+                          parts.push(`(${nhanHang})`);
+                        }
+                        if (tenSale) {
+                          parts.push(`(${tenSale})`);
+                        }
+                        let joined = parts.join(" ");
+                        joined = `${joined} - ${soPL}`;
+                        dienGiaiWithEmail = joined.trim().replace(/\s+/g, " ");
+                      } else {
+                        dienGiaiWithEmail = r.dienGiai;
                       }
-                      if (tenSale) {
-                        parts.push(`(${tenSale})`);
-                      }
-                      let joined = parts.join(" ");
-                      const displaySoPL = soPL || "KH036906";
-                      joined = `${joined} - ${displaySoPL}`;
-                      dienGiaiWithEmail = joined.trim().replace(/\s+/g, " ");
                     } else {
                       dienGiaiWithEmail = r.dienGiai + (r.resolvedEmail ? ` (${r.resolvedEmail})` : "");
                     }
