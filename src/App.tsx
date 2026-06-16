@@ -194,11 +194,10 @@ const VirtualCustomerTable = ({
       {/* Table Header */}
       <div className="flex bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider py-3 px-3">
         <div className="w-12 text-center shrink-0">STT</div>
-        <div className="w-32 shrink-0">Số PL</div>
-        <div className="w-32 shrink-0">Tên Sale</div>
+        <div className="w-44 shrink-0">Số PL</div>
+        <div className="w-44 shrink-0">Tên Sale</div>
         <div className="flex-1 truncate">Nhãn hàng / TK setup</div>
-        <div className="w-48 shrink-0">Mã Khách</div>
-        <div className="w-24 text-center shrink-0">Thao tác</div>
+        <div className="w-40 shrink-0">Mã Khách</div>
       </div>
       
       {/* Scrollable Container */}
@@ -233,12 +232,12 @@ const VirtualCustomerTable = ({
                     </div>
                     
                     {/* Số PL */}
-                    <div className="w-32 shrink-0 font-semibold font-mono text-slate-900 truncate pr-2" title={cust.soPL}>
+                    <div className="w-44 shrink-0 font-semibold font-mono text-slate-900 truncate pr-2" title={cust.soPL}>
                       {cust.soPL || "—"}
                     </div>
                     
                     {/* Tên Sale */}
-                    <div className="w-32 shrink-0 font-medium text-slate-800 pr-2 truncate" title={cust.tenSale}>
+                    <div className="w-44 shrink-0 font-medium text-slate-800 pr-2 truncate" title={cust.tenSale}>
                       {cust.tenSale || "—"}
                     </div>
                     
@@ -248,13 +247,8 @@ const VirtualCustomerTable = ({
                     </div>
                     
                     {/* Mã khách */}
-                    <div className="w-48 shrink-0 font-semibold font-mono text-slate-900 truncate pr-2">
+                    <div className="w-40 shrink-0 font-semibold font-mono text-slate-900 truncate pr-2">
                       {cust.customerCode}
-                    </div>
-                    
-                    {/* Thao tác */}
-                    <div className="w-24 shrink-0 text-center font-bold text-slate-400 italic text-[10px]">
-                      Read-only
                     </div>
                   </div>
                 );
@@ -582,7 +576,7 @@ export default function App() {
         setAccountingCustomers(data);
         showToast(`Đã đồng bộ thành công ${data.length} mã khách từ Google Sheets`, "success");
         if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
-          writeActionLogToSheet(webAppUrl, userEmail, "Đồng Bộ Google Sheets", `Tải thành công ${data.length} mã từ ${targetSheet}`);
+          writeActionLogToSheet(webAppUrl, userEmail, "Đồng Bộ Google Sheets", `Tải thành công ${data.length} mã từ ${targetSheet}`, mode === "bizfly" ? "Bizfly" : "Cloud");
         }
       } else {
         showToast("Không tìm thấy dữ liệu hoặc lỗi kết nối Google Sheets", "error");
@@ -656,7 +650,7 @@ export default function App() {
     showToast("Đã thêm Mã KH mới thành công!", "success");
 
     if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
-      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Thêm Mã Khách Hàng", `Thêm mới mã ${newCust.customerCode} (${newCust.companyName})`);
+      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Thêm Mã Khách Hàng", `Thêm mới mã ${newCust.customerCode} (${newCust.companyName})`, mode === "bizfly" ? "Bizfly" : "Cloud");
     }
     
     // Clear inputs back
@@ -673,18 +667,50 @@ export default function App() {
     showToast(`Đã xóa Mã KH "${code}" thành công!`, "success");
 
     if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
-      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Xóa Mã Khách Hàng", `Đã xóa mã ${code}`);
+      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Xóa Mã Khách Hàng", `Đã xóa mã ${code}`, mode === "bizfly" ? "Bizfly" : "Cloud");
     }
   };
 
   // Clear entire customer list
   const handleClearAllCustomers = () => {
+    const isBizfly = mode === "bizfly";
+    const label = isBizfly ? "BIZFLY" : "CLOUD";
+    const confirmClear = window.confirm(
+      `Bạn có chắc chắn muốn xóa sạch toàn bộ bảng mã ${label} trên cả UI và Google Sheets không?`
+    );
+    if (!confirmClear) return;
+
     setAccountingCustomers([]);
     setCustomerFile("Chưa nạp hoặc trống");
-    showToast("Đã xóa sạch toàn bộ mã khách khỏi danh bạ chuẩn!", "success");
+    showToast(`Đã xóa sạch toàn bộ mã khách ${label} cục bộ!`, "success");
 
-    if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
-      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Xóa Sạch Bảng Mã", "Đã xóa toàn bộ dữ liệu bảng mã cục bộ");
+    const sheetsConfig = loadSheetsConfig();
+    const writeToken = sheetsConfig.writeToken;
+
+    if (isBizfly) {
+      pushBizflyCustomersToGoogleSheet([], sheetsConfig.webAppUrl, userEmail, writeToken)
+        .then(() => {
+          showToast("Đã đồng bộ xóa sạch bảng mã BIZFLY trên Google Sheets!", "success");
+          if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+            writeActionLogToSheet(sheetsConfig.webAppUrl, userEmail, "Xóa Sạch Bảng Mã", "Đã xóa toàn bộ dữ liệu bảng mã BIZFLY trên Google Sheets", "Bizfly");
+          }
+        })
+        .catch(err => {
+          console.error("Lỗi xóa bảng mã BIZFLY:", err);
+          showToast("Không thể xóa trên Google Sheets: " + err.message, "error");
+        });
+    } else {
+      pushCustomersToGoogleSheet([], sheetsConfig.webAppUrl, userEmail, writeToken)
+        .then(() => {
+          showToast("Đã đồng bộ xóa sạch bảng mã CLOUD trên Google Sheets!", "success");
+          if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
+            writeActionLogToSheet(sheetsConfig.webAppUrl, userEmail, "Xóa Sạch Bảng Mã", "Đã xóa toàn bộ dữ liệu bảng mã CLOUD trên Google Sheets", "Cloud");
+          }
+        })
+        .catch(err => {
+          console.error("Lỗi xóa bảng mã CLOUD:", err);
+          showToast("Không thể xóa trên Google Sheets: " + err.message, "error");
+        });
     }
   };
 
@@ -707,7 +733,7 @@ export default function App() {
     setEditingCustomerCode(null);
 
     if (localStorage.getItem("google_sheets_sync_logs") !== "false") {
-      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Cập nhật Mã Khách Hàng", `Sửa thông tin mã ${code}`);
+      writeActionLogToSheet(DEFAULT_WEB_APP_URL, userEmail, "Cập nhật Mã Khách Hàng", `Sửa thông tin mã ${code}`, mode === "bizfly" ? "Bizfly" : "Cloud");
     }
   };
 
@@ -1800,7 +1826,8 @@ export default function App() {
         DEFAULT_WEB_APP_URL,
         userEmail,
         `${logPrefix}Xuất Báo Cáo GBC`,
-        `Đã xuất file ${outputFilename} chứa ${wsData.length - 2} dòng.`
+        `Đã xuất file ${outputFilename} chứa ${wsData.length - 2} dòng.`,
+        mode === "bizfly" ? "Bizfly" : "Cloud"
       );
     }
   };
@@ -1865,7 +1892,8 @@ export default function App() {
         DEFAULT_WEB_APP_URL,
         userEmail,
         "Xuất KH Chưa Phân Loại",
-        `Đã xuất file DANH_SACH_KH_CHUA_PHAN_LOAI.xlsx chứa ${uniqueUnclassified.length} liên hệ.`
+        `Đã xuất file DANH_SACH_KH_CHUA_PHAN_LOAI.xlsx chứa ${uniqueUnclassified.length} liên hệ.`,
+        mode === "bizfly" ? "Bizfly" : "Cloud"
       );
     }
   };

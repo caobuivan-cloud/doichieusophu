@@ -28,7 +28,7 @@ function setupSheets() {
     // Ghi log cảnh báo sheet BIZFLY trống vừa tạo
     var sheetLogs = ss.getSheetByName("Activity Log");
     if (sheetLogs) {
-      sheetLogs.appendRow([new Date(), "System", "WARNING", "Sheet Bảng Mã Khách Hàng BIZFLY mới được tự động tạo và hiện chưa có dữ liệu đối soát."]);
+      sheetLogs.appendRow([new Date(), "System", "WARNING", "Sheet Bảng Mã Khách Hàng BIZFLY mới được tự động tạo và hiện chưa có dữ liệu đối soát.", "Bizfly"]);
     }
   }
   
@@ -36,9 +36,16 @@ function setupSheets() {
   var sheetLogs = ss.getSheetByName("Activity Log");
   if (!sheetLogs) {
     sheetLogs = ss.insertSheet("Activity Log");
-    sheetLogs.appendRow(["Timestamp", "User Email", "Action Name", "Action Details"]);
-    sheetLogs.getRange("A1:D1").setFontWeight("bold");
+    sheetLogs.appendRow(["Timestamp", "User Email", "Action Name", "Action Details", "Phân hệ"]);
+    sheetLogs.getRange("A1:E1").setFontWeight("bold");
     sheetLogs.setFrozenRows(1);
+  } else {
+    // Đảm bảo có tiêu đề cột E là "Phân hệ"
+    var lastCol = sheetLogs.getLastColumn();
+    if (lastCol < 5 || sheetLogs.getRange(1, 5).getValue() !== "Phân hệ") {
+      sheetLogs.getRange(1, 5).setValue("Phân hệ");
+      sheetLogs.getRange("E1").setFontWeight("bold");
+    }
   }
 }
 
@@ -135,13 +142,14 @@ function doPost(e) {
       var user = body.user || "Unknown User";
       var actionName = body.actionName || "";
       var actionDetails = body.actionDetails || "";
+      var section = body.section || "Cloud";
       
       // Giới hạn độ dài text log để chống spam
       if (actionDetails.length > 2000) {
         actionDetails = actionDetails.substring(0, 2000) + "... (bị cắt ngắn)";
       }
       
-      sheetLogs.appendRow([timestamp, user, actionName, actionDetails]);
+      sheetLogs.appendRow([timestamp, user, actionName, actionDetails, section]);
       return createJsonResponse({ status: "success", message: "Log saved" });
     }
     
@@ -183,7 +191,8 @@ function doPost(e) {
       var sheetLogs = ss.getSheetByName("Activity Log");
       if (sheetLogs) {
         var user = body.user || "Unknown User";
-        sheetLogs.appendRow([new Date(), user, "OVERWRITE_RULES", "Đã lưu đè " + rules.length + " bản ghi khách hàng trên sheet " + sheetName]);
+        var section = (sheetName === "Bảng Mã Khách Hàng BIZFLY") ? "Bizfly" : "Cloud";
+        sheetLogs.appendRow([new Date(), user, "OVERWRITE_RULES", "Đã lưu đè " + rules.length + " bản ghi khách hàng trên sheet " + sheetName, section]);
       }
       
       return createJsonResponse({ status: "success", message: "Rules overwritten successfully" });

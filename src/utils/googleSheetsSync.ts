@@ -55,7 +55,8 @@ export async function writeActionLogToSheet(
   webAppUrl: string,
   userStr: string,
   actionName: string,
-  actionDetails: string
+  actionDetails: string,
+  section: string = "Cloud"
 ): Promise<void> {
   if (!webAppUrl) return;
   try {
@@ -66,7 +67,8 @@ export async function writeActionLogToSheet(
         action: "log",
         user: userStr,
         actionName,
-        actionDetails
+        actionDetails,
+        section
       })
     });
   } catch (err) {
@@ -145,7 +147,7 @@ export async function pushCustomersToGoogleSheet(
   userStr: string,
   token: string = ""
 ): Promise<void> {
-  if (!webAppUrl || customers.length === 0) return;
+  if (!webAppUrl) return;
   
   const values: any[][] = customers.map(c => [
     c.customerCode,
@@ -188,7 +190,7 @@ export async function pushBizflyCustomersToGoogleSheet(
   userStr: string,
   token: string = ""
 ): Promise<void> {
-  if (!webAppUrl || values.length === 0) return;
+  if (!webAppUrl) return;
 
   try {
     const response = await fetch(webAppUrl, {
