@@ -464,6 +464,7 @@ export default function App() {
   const [isMatchingLoading, setIsMatchingLoading] = useState<boolean>(false);
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
   const [showWarningConfirmModal, setShowWarningConfirmModal] = useState<boolean>(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState<boolean>(false);
 
   // Customer Master tab interactive search and customer management form
   const [searchCustomerQuery, setSearchCustomerQuery] = useState("");
@@ -674,12 +675,13 @@ export default function App() {
 
   // Clear entire customer list
   const handleClearAllCustomers = () => {
+    setShowClearConfirmModal(true);
+  };
+
+  const executeClearAllCustomers = () => {
+    setShowClearConfirmModal(false);
     const isBizfly = mode === "bizfly";
     const label = isBizfly ? "BIZFLY" : "CLOUD";
-    const confirmClear = window.confirm(
-      `Bạn có chắc chắn muốn xóa sạch toàn bộ bảng mã ${label} trên cả UI và Google Sheets không?`
-    );
-    if (!confirmClear) return;
 
     setAccountingCustomers([]);
     setCustomerFile("Chưa nạp hoặc trống");
@@ -1036,7 +1038,7 @@ export default function App() {
         row.forEach((cell, idx) => {
           if (!cell) return;
           const s = String(cell).toLowerCase().trim();
-          if (s.includes("email")) colIndices.email = idx;
+          if (s === "email") colIndices.email = idx;
           else if (s.includes("tên") || s.includes("ten") || s.includes("công ty") || s.includes("cong ty")) colIndices.name = idx;
           else if (s.includes("địa chỉ") || s.includes("dia chi")) colIndices.address = idx;
           else if (s.includes("mst") || s.includes("thuế") || s.includes("thue")) colIndices.tax = idx;
@@ -3352,6 +3354,42 @@ export default function App() {
                 className="px-5 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold rounded text-xs shadow-sm transition-colors cursor-pointer"
               >
                 Vẫn xuất Excel (.xlsx)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClearConfirmModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center z-[60] p-4 animate-in fade-in duration-100">
+          <div className="bg-white rounded-xl shadow-2xl border border-rose-100 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-rose-950 text-rose-100 p-5 flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-rose-400 shrink-0" />
+              <div>
+                <h3 className="font-bold text-sm">Xác Nhận Xóa Bảng Mã Khách Hàng</h3>
+                <p className="text-[10px] text-rose-300">Hành động này không thể hoàn tác</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-3 text-xs text-slate-600 leading-relaxed text-left">
+              <p>
+                Bạn có chắc chắn muốn xóa sạch toàn bộ bảng mã <strong className="text-rose-600 font-bold">{mode === "bizfly" ? "BIZFLY" : "CLOUD"}</strong> trên cả UI và Google Sheets không?
+              </p>
+              <p className="text-slate-500 italic">
+                Lưu ý: Thao tác này sẽ ghi đè và làm trống dữ liệu hiện có trên Google Sheet kết nối.
+              </p>
+            </div>
+            <div className="bg-slate-50 p-4 border-t border-slate-150 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowClearConfirmModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-650 hover:bg-slate-100 rounded cursor-pointer transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                onClick={executeClearAllCustomers}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold rounded text-xs shadow-sm transition-colors cursor-pointer"
+              >
+                Xóa sạch
               </button>
             </div>
           </div>

@@ -1,7 +1,7 @@
 # Project Structure - DoiChieuSoPhu
 
 > Tạo ngày: 2026-06-10
-> Cập nhật gần nhất: 2026-06-15
+> Cập nhật gần nhất: 2026-06-17
 > Mục đích: Lưu snapshot cấu trúc codebase để AI có thể onboard và resume nhanh.
 
 ---
@@ -14,6 +14,7 @@
 |   |-- changelog/
 |   |   |-- CHANGELOG-FE.md
 |   |-- testing/
+|   |   |-- customer-sync-and-upload-test-cases.md
 |   |   |-- export-excel-template-update-test-cases.md
 |   |-- skills/
 |-- assets/

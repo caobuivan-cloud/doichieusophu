@@ -8,6 +8,11 @@
 
 ## 2026-06-17
 
+### fix: Thay thế window.confirm bằng custom modal và sửa logic nhận diện cột email
+- **Custom React Modal cho xác nhận xóa bảng mã:** Thay thế hàm `window.confirm()` (bị chặn do chạy trong sandbox iframe) bằng custom React Modal hiển thị trực quan trên giao diện, tránh làm đứng luồng hoặc bị trình duyệt block.
+- **Tối ưu nhận diện cột Email:** Thay đổi điều kiện nhận diện tiêu đề từ `.includes("email")` sang so khớp chính xác tuyệt đối `s === "email"` khi nạp bảng mã từ file Excel để tránh lấy nhầm các cột email phụ như "EMAIL ĐỐI CHIẾU".
+- **Files:** `src/App.tsx`
+
 ### fix: Khắc phục lỗi cache và lệch cột khi nạp bảng mã khách hàng Cloud, ẩn phần thiết lập kết nối
 - **Tránh cache dữ liệu cũ:** Bổ sung tham số cache buster `&_t=${Date.now()}` vào URL GET của hàm `pullCustomersFromGoogleSheet` để vượt qua bộ nhớ đệm của Google Apps Script Web App.
 - **Sửa cột mặc định bảng mã Cloud:** Điều chỉnh giá trị khởi tạo `colIndices` mặc định thành `{ code: 0, email: 1, name: 2, tax: 3, address: 4 }` để khớp với thứ tự thực tế trong file Excel chuẩn, tránh tình trạng đọc sai cột khi tải file lên UI.
