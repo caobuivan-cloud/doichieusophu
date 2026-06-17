@@ -1053,13 +1053,15 @@ export default function App() {
       const code = String(row[colIndices.code] || "").trim();
       const email = String(row[colIndices.email] || "").trim();
       const name = String(row[colIndices.name] || "").trim();
+      const address = String(row[colIndices.address] || "").trim();
+      const tax = String(row[colIndices.tax] || "").trim();
 
-      if (code || email) {
+      if (code || email || name || address || tax) {
         cleaned.push({
           email: email,
           companyName: name,
-          address: String(row[colIndices.address] || "").trim(),
-          taxCode: String(row[colIndices.tax] || "").trim(),
+          address: address,
+          taxCode: tax,
           customerCode: code,
         });
       }

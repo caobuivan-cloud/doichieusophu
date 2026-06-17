@@ -124,7 +124,7 @@ function parseCustomerRows(rows: any[][]): AccountingCustomer[] {
     const taxCode = String(row[3] || "").trim();
     const address = String(row[4] || "").trim();
     
-    if (customerCode || companyName) {
+    if (customerCode || email || companyName || taxCode || address) {
       customers.push({
         customerCode,
         email,

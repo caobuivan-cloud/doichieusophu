@@ -30,6 +30,7 @@
 | ID | Bước kiểm thử | Kết quả mong đợi |
 |----|----------------|------------------|
 | RG-01 | Tải file Excel bảng mã có tiêu đề bị đổi tên (ví dụ "Mã khách" thay vì "Mã KH") | Ứng dụng vẫn tự động nhận diện chỉ số cột thông qua fallback chuẩn, dữ liệu hiển thị đúng vị trí. |
+| RG-02 | Tải lên hoặc đồng bộ dòng dữ liệu chỉ chứa email (Mã KH và Tên công ty bị trống) | Dữ liệu vẫn được tải lên và đồng bộ hiển thị đầy đủ, không bị lọc bỏ. Tổng số dòng khớp tuyệt đối với Google Sheets (đủ 1915 dòng). |
 
 ## 5. Negative Cases
 

@@ -12,6 +12,7 @@
 - **Tránh cache dữ liệu cũ:** Bổ sung tham số cache buster `&_t=${Date.now()}` vào URL GET của hàm `pullCustomersFromGoogleSheet` để vượt qua bộ nhớ đệm của Google Apps Script Web App.
 - **Sửa cột mặc định bảng mã Cloud:** Điều chỉnh giá trị khởi tạo `colIndices` mặc định thành `{ code: 0, email: 1, name: 2, tax: 3, address: 4 }` để khớp với thứ tự thực tế trong file Excel chuẩn, tránh tình trạng đọc sai cột khi tải file lên UI.
 - **Ẩn thiết lập kết nối Google Sheets:** Thu gọn khung cấu hình URL và Token và ẩn mặc định (collapsed by default). Người dùng có thể click vào phần tiêu đề để mở rộng/thu gọn khung thiết lập.
+- **Đồng nhất bộ lọc dữ liệu dòng:** Đổi điều kiện nhập dòng ở cả đầu đọc file Excel và đầu tải từ Google Sheets sang kiểm tra đầy đủ cả 5 trường thông tin (`customerCode || email || companyName || taxCode || address`), đảm bảo lấy lên toàn bộ dòng có chứa dữ liệu trên Google Sheets (giải quyết triệt để lỗi thiếu 3 mã khách hàng chỉ có email).
 - **Files:** `src/App.tsx`, `src/utils/googleSheetsSync.ts`
 
 ## 2026-06-15
