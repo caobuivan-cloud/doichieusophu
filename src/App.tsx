@@ -2257,13 +2257,13 @@ export default function App() {
                   {showSheetsConfig && (
                     <div className="flex flex-col gap-3 animate-fade-in">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">URL Web App Google Sheets</label>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">URL Web App Google Sheets (Cố định)</label>
                         <input
                           type="text"
                           value={sheetsUrl}
-                          onChange={(e) => setSheetsUrl(e.target.value)}
-                          placeholder="https://script.google.com/macros/s/.../exec"
-                          className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
+                          readOnly
+                          disabled
+                          className="w-full text-xs px-2.5 py-1.5 bg-slate-100 border border-slate-200 text-slate-500 rounded font-mono cursor-not-allowed"
                         />
                       </div>
 

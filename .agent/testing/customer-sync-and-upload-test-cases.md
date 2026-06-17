@@ -23,7 +23,7 @@
 |----|----------------|------------------|
 | HP-01 | Mở tab "Bảng mã khách hàng", click tải lên bảng mã Cloud mới từ file .xlsx | Dữ liệu hiển thị đúng trên bảng danh bạ, mã khách hàng, tên công ty, email không bị lệch. |
 | HP-02 | Click "Đồng bộ từ Google Sheets" hoặc tải lại trang | Ứng dụng tự động tải dữ liệu mới nhất từ Google Sheets về hiển thị (không bị lưu đè danh sách cũ). |
-| HP-03 | Click vào tiêu đề "Thiết lập kết nối Google Sheets" | Khung nhập URL và Token được mở rộng, click lần nữa sẽ thu gọn lại. |
+| HP-03 | Click vào tiêu đề "Thiết lập kết nối Google Sheets" | Khung nhập URL và Token được mở rộng, ô URL Google Sheets hiển thị mặc định bản test đúng (AKfycbxLAZs...) và ở trạng thái chỉ đọc (disabled/read-only), không cho phép chỉnh sửa. |
 | HP-04 | Click nút "Xóa tất cả" bảng mã (màu đỏ) trong tab "Bảng mã khách hàng" | Giao diện hiển thị Custom Modal xác nhận xóa bảng mã. Click "Hủy bỏ" để đóng modal và giữ nguyên dữ liệu. Click "Xóa sạch" để làm trống bảng mã trên cả giao diện và lưu lên Google Sheets. |
 
 ## 4. Edge / Regression

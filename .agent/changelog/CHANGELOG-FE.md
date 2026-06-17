@@ -8,6 +8,11 @@
 
 ## 2026-06-17
 
+### fix: Khóa cứng URL Web App Google Sheets mặc định và vô hiệu hóa chỉnh sửa trên UI
+- **Cố định URL Web App:** Khóa cứng URL Web App Google Sheets thành giá trị mặc định của bản test đúng (`AKfycbxLAZs...`), không đọc hay lưu đè từ `localStorage` của trình duyệt để tránh lệch URL giữa local dev và trang live chạy chính thức.
+- **Vô hiệu hóa chỉnh sửa URL:** Cập nhật ô input nhập URL Google Sheets thành trạng thái Chỉ đọc (Read-only / Disabled) trên giao diện để tránh người dùng thay đổi nhầm thông tin cấu hình này.
+- **Files:** `src/App.tsx`, `src/utils/googleSheetsSync.ts`
+
 ### fix: Thay thế window.confirm bằng custom modal và sửa logic nhận diện cột email
 - **Custom React Modal cho xác nhận xóa bảng mã:** Thay thế hàm `window.confirm()` (bị chặn do chạy trong sandbox iframe) bằng custom React Modal hiển thị trực quan trên giao diện, tránh làm đứng luồng hoặc bị trình duyệt block.
 - **Tối ưu nhận diện cột Email:** Thay đổi điều kiện nhận diện tiêu đề từ `.includes("email")` sang so khớp chính xác tuyệt đối `s === "email"` khi nạp bảng mã từ file Excel để tránh lấy nhầm các cột email phụ như "EMAIL ĐỐI CHIẾU".
