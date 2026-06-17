@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-06-17
+
+### fix: Khắc phục lỗi cache và lệch cột khi nạp bảng mã khách hàng Cloud, ẩn phần thiết lập kết nối
+- **Tránh cache dữ liệu cũ:** Bổ sung tham số cache buster `&_t=${Date.now()}` vào URL GET của hàm `pullCustomersFromGoogleSheet` để vượt qua bộ nhớ đệm của Google Apps Script Web App.
+- **Sửa cột mặc định bảng mã Cloud:** Điều chỉnh giá trị khởi tạo `colIndices` mặc định thành `{ code: 0, email: 1, name: 2, tax: 3, address: 4 }` để khớp với thứ tự thực tế trong file Excel chuẩn, tránh tình trạng đọc sai cột khi tải file lên UI.
+- **Ẩn thiết lập kết nối Google Sheets:** Thu gọn khung cấu hình URL và Token và ẩn mặc định (collapsed by default). Người dùng có thể click vào phần tiêu đề để mở rộng/thu gọn khung thiết lập.
+- **Files:** `src/App.tsx`, `src/utils/googleSheetsSync.ts`
+
 ## 2026-06-15
 
 ### feat: Tự động gán mã KH020219 cho khách chưa phân loại khi xuất Excel

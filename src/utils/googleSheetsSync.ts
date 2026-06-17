@@ -1,3 +1,22 @@
+/**
+ * @contract
+ * HỒ SƠ QUẢN LÝ (FILE-LEVEL CONTRACT) - src/utils/googleSheetsSync.ts
+ * 
+ * VAI TRÒ:
+ * Bộ chuyển đổi (Integration Adapter) chịu trách nhiệm giao tiếp giữa ứng dụng React và Google Sheets Web App (Apps Script).
+ * 
+ * KHÔNG CHỊU TRÁCH NHIỆM:
+ * - Lưu trữ trạng thái trong bộ nhớ (in-memory state) hoặc giao diện hiển thị của bảng mã khách hàng.
+ * - Logic hạch toán/đối soát (reconciliation logic).
+ * 
+ * RÀNG BUỘC QUAN TRỌNG:
+ * - Mọi yêu cầu GET (pull) phải kèm theo tham số `_t=${Date.now()}` làm cache buster để tránh cơ chế cache của Google Apps Script Web App.
+ * - Cấu trúc dữ liệu gửi và nhận phải tuân thủ nghiêm ngặt định dạng cột:
+ *   + Cloud: [Mã KH, Email, Tên Công Ty, MST, Địa Chỉ]
+ *   + BIZFLY: [Số PL, Tên sale, Nhãn hàng, Mã khách]
+ * - Các API POST (overwrite) bắt buộc phải truyền `token` từ LocalStorage để xác thực ghi đè phía Apps Script.
+ */
+
 import { AccountingCustomer } from "../sampleData";
 
 export const STORAGE_KEYS = {
@@ -79,7 +98,7 @@ export async function writeActionLogToSheet(
 export async function pullCustomersFromGoogleSheet(webAppUrl: string, sheetName: string): Promise<any[]> {
   if (!webAppUrl) return [];
   try {
-    const response = await fetch(`${webAppUrl}?action=get_rules&sheetName=${encodeURIComponent(sheetName)}`);
+    const response = await fetch(`${webAppUrl}?action=get_rules&sheetName=${encodeURIComponent(sheetName)}&_t=${Date.now()}`);
     if (response.ok) {
       const result = await response.json();
       if (result.status === "success" && result.data) {

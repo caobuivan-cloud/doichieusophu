@@ -403,6 +403,7 @@ export default function App() {
 
   const [sheetsUrl, setSheetsUrl] = useState(() => loadSheetsConfig().webAppUrl);
   const [sheetsToken, setSheetsToken] = useState(() => loadSheetsConfig().writeToken);
+  const [showSheetsConfig, setShowSheetsConfig] = useState(false);
 
   const handleSaveConnectionSettings = () => {
     if (!sheetsUrl.trim()) {
@@ -1021,7 +1022,7 @@ export default function App() {
   // Parse Accounting Clients map
   const parseCustomerCodes = (rows: any[][]) => {
     let headerRowIndex = 0;
-    let colIndices = { email: 0, name: 1, address: 2, tax: 3, code: 4 };
+    let colIndices = { code: 0, email: 1, name: 2, tax: 3, address: 4 };
 
     for (let r = 0; r < Math.min(rows.length, 10); r++) {
       const row = rows[r];
@@ -2236,40 +2237,52 @@ export default function App() {
 
                 {/* Connection Settings Card */}
                 <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-3">
-                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1.5 font-semibold">
-                    <Settings className="w-4 h-4 text-blue-500" />
-                    Thiết lập kết nối Google Sheets
-                  </h3>
-                  
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">URL Web App Google Sheets</label>
-                    <input
-                      type="text"
-                      value={sheetsUrl}
-                      onChange={(e) => setSheetsUrl(e.target.value)}
-                      placeholder="https://script.google.com/macros/s/.../exec"
-                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Token xác thực (Write Token)</label>
-                    <input
-                      type="password"
-                      value={sheetsToken}
-                      onChange={(e) => setSheetsToken(e.target.value)}
-                      placeholder="Mã token bảo vệ ghi đè"
-                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleSaveConnectionSettings}
-                    className="w-full py-1.5 bg-slate-800 hover:bg-slate-900 active:bg-black text-white font-bold rounded text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                  <div 
+                    className="flex items-center justify-between border-b border-slate-100 pb-2 cursor-pointer select-none"
+                    onClick={() => setShowSheetsConfig(!showSheetsConfig)}
                   >
-                    Lưu thiết lập
-                  </button>
+                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 font-semibold">
+                      <Settings className="w-4 h-4 text-blue-500" />
+                      Thiết lập kết nối Google Sheets
+                    </h3>
+                    <span className="text-slate-400 hover:text-slate-600 text-xs">
+                      {showSheetsConfig ? "Ẩn ▲" : "Hiện ▼"}
+                    </span>
+                  </div>
+                  
+                  {showSheetsConfig && (
+                    <div className="flex flex-col gap-3 animate-fade-in">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">URL Web App Google Sheets</label>
+                        <input
+                          type="text"
+                          value={sheetsUrl}
+                          onChange={(e) => setSheetsUrl(e.target.value)}
+                          placeholder="https://script.google.com/macros/s/.../exec"
+                          className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Token xác thực (Write Token)</label>
+                        <input
+                          type="password"
+                          value={sheetsToken}
+                          onChange={(e) => setSheetsToken(e.target.value)}
+                          placeholder="Mã token bảo vệ ghi đè"
+                          className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden font-mono"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveConnectionSettings}
+                        className="w-full py-1.5 bg-slate-800 hover:bg-slate-900 active:bg-black text-white font-bold rounded text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        Lưu thiết lập
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
